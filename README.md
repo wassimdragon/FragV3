@@ -1,19 +1,19 @@
 # FragV3 — Molecular Fragment Viewer
 
-FragV3 is a tool for mass spectrometry research. You give it a molecule, it calculates every possible fragment that can be produced by breaking chemical bonds, and lets you search through them interactively in a 3D web viewer.
+FragV3 is a tool for mass spectrometry research. You give it a molecule, it calculates every possible fragment produced by breaking chemical bonds, and lets you search through them interactively in a 3D web viewer.
 
 ---
 
 ## What it does
 
 1. **Takes a molecule** (as a SMILES string) as input
-2. **Calculates all possible fragments** that result from breaking 1, 2, 3... up to N bonds simultaneously
+2. **Calculates all possible fragments** from breaking 1, 2, 3... up to N bonds simultaneously
 3. **Saves the results** to the `fragment_data/` folder (organized by number of breaks)
 4. **Updates a library** so you can view and search all your molecules in one place
 
 In the browser, you can:
-- Switch between any molecule you've computed
-- Enter an observed **m/z** value from your mass spectrometer, set a **charge state** (z), and a **tolerance**
+- Switch between any molecule you've computed from a dropdown
+- Enter an observed **m/z** value, set a **charge state (z)**, and a **tolerance**
 - Instantly see which fragments match, highlighted in 3D
 
 ---
@@ -24,7 +24,7 @@ In the browser, you can:
 FragV3/
 ├── FragV3.py             # Main Python script — run this to add a new molecule
 ├── web/
-│   ├── index.html        # The interactive web viewer (open this in your browser)
+│   ├── index.html        # The interactive web viewer
 │   └── 3Dmol-min.js      # 3D rendering library (works offline)
 └── fragment_data/
     ├── manifest.json     # Registry of all computed molecules
@@ -49,16 +49,14 @@ pip install rdkit
 
 ### Step 1 — Add a molecule to your library
 
-Run the script and follow the prompts:
-
 ```bash
 python FragV3.py
 ```
 
 - **SMILES**: paste your molecule's SMILES string (press Enter to use the default: 5-Iodouracil)
-- **Max breaks**: type `max` to explore everything, or a number (e.g. `6`) to limit it
+- **Max breaks**: type `max` to explore all combinations, or a number (e.g. `6`) to limit it
 
-The script will calculate all fragments and save them. If you run the same molecule again, it loads from cache instantly — no recalculation needed.
+Results are cached — running the same molecule again loads instantly from disk with no recalculation.
 
 ### Step 2 — View your library
 
@@ -68,11 +66,11 @@ Start a local web server in the FragV3 folder:
 python3 -m http.server 8000
 ```
 
-Then open your browser at: **http://localhost:8000/web/index.html**
+Then open: **http://localhost:8000/web/index.html**
 
 ### Optional — One-command shortcut (`FragV3Run`)
 
-Add this to your `~/.zshrc` file to launch everything with a single command:
+Add this to your `~/.zshrc` to launch everything with one command:
 
 ```bash
 FragV3Run() {
@@ -84,7 +82,15 @@ FragV3Run() {
 }
 ```
 
-Then just type `FragV3Run` in any terminal — it starts the server and opens the browser automatically.
+Then just type `FragV3Run` in any terminal.
+
+---
+
+## Technical Notes
+
+- **JSON format**: Fragment data is stored as compact arrays `[indices, weight, formula]` to keep file sizes small (e.g. Sucrose with 1.26M fragments → 139 MB instead of 600 MB).
+- **3D coordinates**: Generated from the SMILES string directly to preserve correct bond orders (double bonds, aromatic bonds). Uses a 4-tier fallback system for complex cage molecules like C60 (fullerenes).
+- **Parallel processing**: Uses all available CPU cores for fragment generation.
 
 ---
 
