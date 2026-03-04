@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fragment Viewer Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg-dark: #0f172a;
+            --side-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --accent: #0ea5e9;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            height: 100vh;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 380px;
+            min-width: 320px;
+            display: flex;
+            flex-direction: column;
+            background: var(--side-bg);
+            border-right: 1px solid var(--border);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .header {
+            padding: 24px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+
+        .molecule-selector {
+            width: 100%;
+            padding: 10px 14px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+
+        .molecule-selector:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .formula {
+            font-size: 14px;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        #controls {
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: #fff;
+            transition: all 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+
+        #applyBtn {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        #applyBtn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+        }
+
+        #applyBtn:active {
+            transform: translateY(0);
+        }
+
+        #stats {
+            font-size: 13px;
+            color: var(--accent);
+            margin-top: 12px;
+            font-weight: 500;
+        }
+
+        #fragList {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: rgba(15, 23, 42, 0.3);
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        #fragList::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #fragList::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        .frag-btn {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 14px 18px;
+            text-align: left;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            color: var(--text-main);
+            font-size: 14px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .frag-btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: var(--text-muted);
+            transform: translateX(4px);
+        }
+
+        .frag-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4);
+        }
+
+        .frag-btn b {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .frag-btn small {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: block;
+        }
+
+        .frag-btn.active small {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        #viewer-wrap {
+            flex: 1;
+            position: relative;
+            background: #fff;
+        }
+
+        #viewer3d {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #no-mol {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #0f172a;
+            color: var(--text-muted);
+            font-size: 16px;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .frag-btn {
+            animation: fadeIn 0.4s ease forwards;
+        }
+    </style>
+
+    <!-- Load 3Dmol.js -->
+    <script src="3Dmol-min.js"></script>
+
+</head>
+
+<body>
+    <div id="sidebar">
+        <div class="header">
+            <h1>Molecule Library</h1>
+            <select id="moleculeSelect" class="molecule-selector" onchange="loadSelectedMolecule()">
+                <option value="">Loading library...</option>
+            </select>
+            <div id="activeFormula" class="formula">--</div>
+        </div>
+        <div id="controls">
+            <div class="row">
+                <div style="flex:1.5"><label>Target m/z</label><input id="massInput" type="number" step="0.01"
+                        value="0.00" placeholder="0.00"></div>
+                <div style="flex:1"><label>Charge (z)</label><input id="chargeInput" type="number" step="1" value="1"
+                        min="1"></div>
+            </div>
+            <div class="row">
+                <div style="flex:1"><label>± Tolerance</label><input id="tolInput" type="number" step="0.01"
+                        value="0.00" placeholder="0.00"></div>
+            </div>
+            <button id="applyBtn" onclick="applyFilter()">Search Fragments</button>
+            <div id="stats">Select a molecule to begin</div>
+        </div>
+        <div id="fragList">
+            <!-- Fragments will go here -->
+        </div>
+    </div>
+    <div id="viewer-wrap">
+        <div id="viewer3d" style="display: none;"></div>
+        <div id="no-mol">
+            <div class="loader" id="loader"></div>
+            <span id="viewer-msg">Select a molecule from the library.</span>
+        </div>
+    </div>
+
+    <script>
+        let ALL_FRAGS = [];
+        let MOL_BLOCK = "";
+        let viewer = null;
+        let currentManifest = [];
+
+        // Entry point
+        window.addEventListener('load', function () {
+            fetchManifest();
+        });
+
+        // Fetch manifest.json
+        async function fetchManifest() {
+            try {
+                const response = await fetch(`../fragment_data/manifest.json?t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error("Manifest not found");
+                currentManifest = await response.json();
+                populateDropdown();
+            } catch (error) {
+                console.error("Error loading manifest:", error);
+                document.getElementById("moleculeSelect").innerHTML = "<option>Error loading library</option>";
+                document.getElementById("stats").textContent = `Manifest Load Error: ${error.message}`;
+            }
+        }
+
+        // Populate the selector based on manifest
+        function populateDropdown() {
+            const select = document.getElementById("moleculeSelect");
+            select.innerHTML = "<option value=''>-- Select a Molecule --</option>";
+
+            currentManifest.forEach((mol, index) => {
+                const opt = document.createElement("option");
+                opt.value = index;
+                opt.textContent = `${mol.formula} (Breaks: ${mol.max_breaks})`;
+                select.appendChild(opt);
+            });
+        }
+
+        // When user selects a molecule from dropdown
+        async function loadSelectedMolecule() {
+            const select = document.getElementById("moleculeSelect");
+            const index = select.value;
+
+            if (index === "") {
+                resetViewer();
+                return;
+            }
+
+            const molData = currentManifest[index];
+            document.getElementById("activeFormula").textContent = `Formula: ${molData.formula} | SMILES: ${molData.smiles}`;
+
+            // Show loader
+            document.getElementById("viewer3d").style.display = "none";
+            document.getElementById("no-mol").style.display = "flex";
+            document.getElementById("loader").style.display = "block";
+            document.getElementById("viewer-msg").textContent = "Loading fragments data... (This may take a minute for huge files)";
+            document.getElementById("stats").textContent = "Fetching " + molData.file + "...";
+            document.getElementById("fragList").innerHTML = "";
+
+            try {
+                const response = await fetch(`../fragment_data/${molData.file}?t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error(`HTTP Error ${response.status} when fetching ${molData.file}`);
+
+                document.getElementById("stats").textContent = "File downloaded! Parsing JSON dataset...";
+
+                const data = await response.json();
+
+                // Process fragments for UI
+                ALL_FRAGS = data.fragments.map(f => {
+                    if (Array.isArray(f)) {
+                        // New compact schema: [indices, weight, formula]
+                        return {
+                            rdkit_indices: f[0].map(i => i - 1),
+                            weight: parseFloat(f[1].toFixed(4)),
+                            formula: f[2]
+                        };
+                    } else {
+                        // Old backwards-compatible schema
+                        return {
+                            weight: parseFloat(f.weight.toFixed(4)),
+                            formula: f.formula,
+                            rdkit_indices: f.indices.map(i => i - 1)
+                        };
+                    }
+                });
+
+                MOL_BLOCK = molData.mol_block;
+
+                // Hide loader, show 3D
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("no-mol").style.display = "none";
+                document.getElementById("viewer3d").style.display = "block";
+
+                initViewer();
+
+                // Automatically apply current filter against new molecule's fragments
+                applyFilter();
+
+            } catch (error) {
+                console.error("Load specific molecule error:", error);
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("viewer-msg").textContent = "Error parsing molecule data.";
+                document.getElementById("stats").textContent = `Error: ${error.message}`;
+            }
+        }
+
+        function resetViewer() {
+            document.getElementById("activeFormula").textContent = "--";
+            document.getElementById("viewer3d").style.display = "none";
+            document.getElementById("no-mol").style.display = "flex";
+            document.getElementById("loader").style.display = "none";
+            document.getElementById("viewer-msg").textContent = "Select a molecule from the library.";
+            if (viewer) viewer.clear();
+            document.getElementById("fragList").innerHTML = "";
+            document.getElementById("stats").textContent = "Select a molecule to begin";
+        }
+
+        function initViewer() {
+            const el = document.getElementById('viewer3d');
+
+            // Only recreate viewer if it doesn't exist to save resources
+            if (!viewer) {
+                viewer = $3Dmol.createViewer(el, { backgroundColor: 'white' });
+            }
+
+            if (MOL_BLOCK) {
+                viewer.clear();
+                viewer.addModel(MOL_BLOCK, 'mol');
+                viewer.resize();
+            }
+        }
+
+        function applyFilter() {
+            if (ALL_FRAGS.length === 0) return;
+
+            const mz = parseFloat(document.getElementById('massInput').value) || 0;
+            const z = parseInt(document.getElementById('chargeInput').value) || 1;
+            const tol = parseFloat(document.getElementById('tolInput').value) || 0;
+
+            const targetMass = mz * z;
+            const list = document.getElementById('fragList');
+
+            list.innerHTML = '';
+
+            // Always add the parent molecule
+            const parentBtn = document.createElement('button');
+            parentBtn.className = 'frag-btn active';
+            parentBtn.innerHTML = `<b>Parent Molecule</b><small>Structure: ${document.getElementById("activeFormula").textContent.replace("Formula: ", "").split(" |")[0]}</small>`;
+            parentBtn.onclick = function () { showParent(this); };
+            list.appendChild(parentBtn);
+
+            if (targetMass > 0 || tol > 0) {
+                const matches = ALL_FRAGS.filter(f => Math.abs(f.weight - targetMass) <= tol);
+                document.getElementById('stats').textContent = 'Found ' + matches.length + ' matches (m = ' + targetMass.toFixed(2) + ')';
+
+                matches.forEach((frag, i) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'frag-btn';
+                    btn.style.animationDelay = (i * 0.05) + 's';
+                    btn.innerHTML = '<b>Match ' + (i + 1) + '</b><small>Mass: ' + frag.weight.toFixed(4) + ' | ' + frag.formula + '</small>';
+                    btn.onclick = function () { showFragment(frag, this); };
+                    list.appendChild(btn);
+                });
+            } else {
+                document.getElementById('stats').textContent = `Total fragments loaded: ${ALL_FRAGS.length}`;
+            }
+
+            showParent(parentBtn);
+        }
+
+        function showParent(btn) {
+            document.querySelectorAll('.frag-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (!viewer || !MOL_BLOCK) return;
+            viewer.clear();
+            viewer.addModel(MOL_BLOCK, 'mol');
+            viewer.setStyle({}, { stick: { colorscheme: 'Jmol' }, sphere: { radius: 0.3 } });
+            viewer.zoomTo();
+            viewer.render();
+        }
+
+        function showFragment(frag, btn) {
+            document.querySelectorAll('.frag-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (!viewer || !MOL_BLOCK) return;
+
+            const indices = frag.rdkit_indices || [];
+            viewer.clear();
+            viewer.addModel(MOL_BLOCK, 'mol');
+            viewer.setStyle({}, { stick: { colorscheme: 'Jmol', opacity: 0.1 }, sphere: { radius: 0.2, opacity: 0.1 } });
+
+            indices.forEach(function (idx) {
+                viewer.setStyle({ index: idx }, { stick: { colorscheme: 'Jmol', radius: 0.18 }, sphere: { colorscheme: 'Jmol', radius: 0.55 } });
+            });
+
+            viewer.render();
+        }
+    </script>
+</body>
+
+</html>

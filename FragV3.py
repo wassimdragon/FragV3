@@ -32,14 +32,13 @@ ATOM_VALENCIES = {
 
 # --- User Defined Parameters ---
 
-TARGET_SUM = 0  # Initial weight filter (now handled in browser)
-ERROR_TOLERANCE = 0  # Initial tolerance (now handled in browser)
 
 FORCED_MAX_BOND_BREAKS = "max"
 CACHE_DIR = "fragment_data" # Folder for all previous results
 
 
-# --- Required Libraries ---
+# --- Required Libraries ---C([C@@H]1[C@H]([C@@H]([C@H]([C@H](O1)O[C@]2([C@H]([C@@H]([C@H](O2)CO)O)O)CO)O)O)O)O
+
 from itertools import combinations
 from collections import defaultdict
 import time
@@ -241,15 +240,11 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
                                 weight = calculate_molecular_weight(fragment_indices, atoms_dict)
                                 formula, _ = format_fragment(fragment_indices, atoms_dict)
 
-                                fragment_data = {
-                                    'indices': fragment_indices,
-                                    'weight': weight,
-                                    'formula': formula
-                                }
+                                fragment_data = [fragment_indices, weight, formula]
 
                                 if not first_fragment:
-                                    f.write(',\n')
-                                json.dump(fragment_data, f, indent=4)
+                                    f.write(',')
+                                json.dump(fragment_data, f, separators=(',', ':'))
                                 first_fragment = False
 
                                 yield fragment_data # Yield the fragment data dictionary
@@ -314,31 +309,36 @@ def generate_molecule_hash(atoms_dict, bonds_list, max_breaks):
     return hashlib.md5(combined.encode('utf-8')).hexdigest()
 
 def get_fragment_cache_path(formula, smiles, max_breaks):
-    """Generates an efficient filename for the fragment cache."""
+    """Generates an efficient filename and subdirectory path for the fragment cache."""
     # Sanitize formula and max_breaks for filename
     clean_formula = "".join([c if c.isalnum() else "_" for c in formula])
     # Use MD5 of SMILES for a unique, safe identifier
     smiles_hash = hashlib.md5(smiles.encode()).hexdigest()[:10]
-    filename = f"{clean_formula}_breaks_{max_breaks}_{smiles_hash}.json"
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    return os.path.join(CACHE_DIR, filename)
+    filename = f"{clean_formula}_{smiles_hash}.json"
+    
+    # Create a subfolder based on the number of breaks
+    break_folder_name = f"{max_breaks}_breaks" if str(max_breaks).isdigit() else f"{max_breaks}_breaks"
+    if max_breaks == 1:
+        break_folder_name = "1_break"
+        
+    subfolder_path = os.path.join(CACHE_DIR, break_folder_name)
+    os.makedirs(subfolder_path, exist_ok=True)
+    return os.path.join(subfolder_path, filename)
 
 
-def find_and_report_matching_fragments(all_fragments_data, target_sum, error_tolerance, atoms_dict, bonds_list=None):
+def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smiles_str, max_breaks, fragment_file_path):
     """
-    Generates a single, fully self-contained HTML file with ALL fragment data
-    embedded as JavaScript. The user can interactively filter by mass and tolerance
-    directly in the browser — no server required.
+    Generates 3D coordinates and updates the central manifest.json
+    so the SPA viewer can pick up the new molecule.
     """
-    parent_formula, _ = format_fragment(list(atoms_dict.keys()), atoms_dict)
     print("-" * 30)
-    print(f"Molecule: {parent_formula} | Building interactive viewer...")
+    print("Updating UI Registry...")
     sys.stdout.flush()
 
-    # --- Generate 3D coordinates from the atoms/bonds using SMILES-aware embedding ---
+    # --- Generate 3D coordinates ---
     mol_block = ""
     if bonds_list:
-        print("Generating 3D coordinates...")
+        print("Generating 3D coordinates (ETKDGv3)...")
         sys.stdout.flush()
         rw = Chem.RWMol()
         idx_map = {}
@@ -371,312 +371,53 @@ def find_and_report_matching_fragments(all_fragments_data, target_sum, error_tol
                 print(" DONE")
 
                 mol_block = Chem.MolToMolBlock(mol_rdkit)
-                print("  3D coordinates successfully generated.")
         except Exception as e:
             print(f"\n  Warning: 3D generation failed ({e}). Viewer will show text only.")
         sys.stdout.flush()
 
-    # --- Collect all fragment data (not just matching) for JS embedding ---
-    all_frags_for_js = []
-    match_count = 0
-    total_frags = len(all_fragments_data)
+    # --- Update manifest.json ---
+    manifest_path = os.path.join(CACHE_DIR, "manifest.json")
+    manifest = []
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+        except (IOError, json.JSONDecodeError):
+            pass
+
+    # Remove existing entry for this specific file if it exists to overwrite
+    # Make sure we store the relative path from CACHE_DIR so the web viewer can find it in the subfolder
+    relative_file_path = os.path.relpath(fragment_file_path, CACHE_DIR)
     
-    # Simple loop without progress bar as requested
-    for frag in all_fragments_data:
-        indices = frag.get('indices', [])
-        weight = frag.get('weight', 0)
-        formula = frag.get('formula', '')
-        if indices is None or weight is None:
-            continue
-            
-        rdkit_indices = [idx - 1 for idx in indices]
-        all_frags_for_js.append({
-            'weight': round(weight, 4),
-            'formula': formula,
-            'rdkit_indices': rdkit_indices,
-        })
-        
-        if abs(weight - target_sum) <= error_tolerance:
-            match_count += 1
-            
-    # Report matching fragments found
-    if match_count > 0:
-        print(f"Found {match_count} matching fragment(s):")
-        actual_matches = [f for f in all_fragments_data if abs(f.get('weight', 0) - target_sum) <= error_tolerance]
-        for m in actual_matches:
-            w, f, idx = m.get('weight'), m.get('formula'), m.get('indices')
-            print(f"  Weight: {w:<10.4f} Formula: {f:<10} Indices: {idx}")
+    manifest = [m for m in manifest if m.get("file") != relative_file_path]
 
-    # --- Read the local 3Dmol.js file to embed inline ---
-    # Try to find 3Dmol-min.js relative to this script
+    manifest.append({
+        "formula": formula_str,
+        "smiles": smiles_str,
+        "max_breaks": max_breaks,
+        "file": relative_file_path,
+        "mol_block": mol_block
+    })
+
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    # --- Provide Instructions ---
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    dmol_path = os.path.join(script_dir, "web", "3Dmol-min.js")
-    dmol_js = ""
-    if os.path.exists(dmol_path):
-        with open(dmol_path, 'r') as f:
-            dmol_js = f.read()
-        print("Bundling 3Dmol.js inline (offline-capable).")
-    else:
-        print("Warning: web/3Dmol-min.js not found. The viewer needs internet.")
-
-    # Escape molBlock for embedding in JS (backticks safe via replace)
-    mol_block_escaped = mol_block.replace('\\', '\\\\').replace('`', '\\`')
-    all_frags_json = json.dumps(all_frags_for_js)
-
-    # --- Build fully self-contained HTML ---
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fragment Viewer – {parent_formula}</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-<style>
-  :root {{
-    --primary: #4f46e5;
-    --primary-hover: #4338ca;
-    --bg-dark: #0f172a;
-    --side-bg: #1e293b;
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --border: #334155;
-    --accent: #0ea5e9;
-  }}
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ 
-    font-family: 'Outfit', sans-serif; 
-    display: flex; 
-    height: 100vh; 
-    background: var(--bg-dark); 
-    color: var(--text-main); 
-    overflow: hidden;
-  }}
-  
-  #sidebar {{ 
-    width: 380px; 
-    min-width: 320px; 
-    display: flex; 
-    flex-direction: column; 
-    background: var(--side-bg); 
-    border-right: 1px solid var(--border); 
-    box-shadow: 10px 0 30px rgba(0,0,0,0.3); 
-    z-index: 10; 
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }}
-  
-  .header {{
-    padding: 24px;
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-    border-bottom: 1px solid var(--border);
-  }}
-  .header h1 {{ font-size: 20px; font-weight: 600; margin-bottom: 4px; color: var(--accent); }}
-  .header .formula {{ font-size: 14px; color: var(--text-muted); letter-spacing: 0.5px; }}
-
-  #controls {{ 
-    padding: 24px; 
-    background: rgba(255,255,255,0.02);
-    border-bottom: 1px solid var(--border); 
-  }}
-  .input-group {{ margin-bottom: 16px; }}
-  .row {{ display: flex; gap: 12px; margin-bottom: 12px; }}
-  label {{ font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 6px; }}
-  input {{ 
-    width: 100%; 
-    padding: 10px 14px; 
-    background: #0f172a; 
-    border: 1px solid var(--border); 
-    border-radius: 8px; 
-    font-size: 14px; 
-    color: #fff;
-    transition: all 0.2s;
-  }}
-  input:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2); }}
-  
-  #applyBtn {{ 
-    width: 100%; 
-    padding: 12px; 
-    background: var(--primary); 
-    color: #fff; 
-    border: none; 
-    border-radius: 8px; 
-    font-size: 14px; 
-    font-weight: 600; 
-    cursor: pointer; 
-    transition: all 0.2s;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  }}
-  #applyBtn:hover {{ background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }}
-  #applyBtn:active {{ transform: translateY(0); }}
-
-  #stats {{ font-size: 13px; color: var(--accent); margin-top: 12px; font-weight: 500; }}
-
-  #fragList {{ 
-    flex: 1; 
-    overflow-y: auto; 
-    padding: 16px; 
-    background: rgba(15, 23, 42, 0.3);
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }}
-  #fragList::-webkit-scrollbar {{ width: 6px; }}
-  #fragList::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 10px; }}
-
-  .frag-btn {{ 
-    display: block; 
-    width: 100%; 
-    margin-bottom: 10px; 
-    padding: 14px 18px; 
-    text-align: left; 
-    cursor: pointer; 
-    border: 1px solid var(--border); 
-    background: rgba(255,255,255,0.03); 
-    border-radius: 12px; 
-    color: var(--text-main);
-    font-size: 14px; 
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-  }}
-  .frag-btn:hover {{ 
-    background: rgba(255,255,255,0.07); 
-    border-color: var(--text-muted);
-    transform: translateX(4px);
-  }}
-  .frag-btn.active {{ 
-    background: var(--primary); 
-    border-color: var(--primary); 
-    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4);
-  }}
-  .frag-btn b {{ display: block; font-weight: 600; margin-bottom: 4px; }}
-  .frag-btn small {{ font-size: 12px; color: var(--text-muted); display: block; }}
-  .frag-btn.active small {{ color: rgba(255,255,255,0.8); }}
-
-  #viewer-wrap {{ flex: 1; position: relative; background: #fff; }}
-  #viewer3d {{ position: absolute; inset: 0; width: 100%; height: 100%; }}
-  #no-mol {{ display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: var(--text-muted); font-size: 16px; }}
-  
-  /* Animations */
-  @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
-  .frag-btn {{ animation: fadeIn 0.4s ease forwards; }}
-</style>
-</head>
-<body>
-<div id="sidebar">
-  <div class="header">
-    <h1>Molecular Finder</h1>
-    <div class="formula">{parent_formula}</div>
-  </div>
-  <div id="controls">
-    <div class="row">
-      <div style="flex:1.5"><label>Target m/z</label><input id="massInput" type="number" step="0.01" value="{target_sum}" placeholder="0.00"></div>
-      <div style="flex:1"><label>Charge (z)</label><input id="chargeInput" type="number" step="1" value="1" min="1"></div>
-    </div>
-    <div class="row">
-      <div style="flex:1"><label>± Tolerance</label><input id="tolInput" type="number" step="0.01" value="{error_tolerance}" placeholder="0.00"></div>
-    </div>
-    <button id="applyBtn" onclick="applyFilter()">Update Results</button>
-    <div id="stats">Ready to search...</div>
-  </div>
-  <div id="fragList">
-    <button class="frag-btn active" onclick="showParent(this)"><b>Parent Molecule</b><small>Structure: {parent_formula}</small></button>
-  </div>
-</div>
-<div id="viewer-wrap">
-  {'<div id="viewer3d"></div>' if mol_block else '<div id="no-mol">3D visualization unavailable for this molecule</div>'}
-</div>
-
-{'<script>' + dmol_js + '</script>' if dmol_js else '<script src="https://3Dmol.org/build/3Dmol-min.js"></script>'}
-<script>
-const ALL_FRAGS = {all_frags_json};
-const MOL_BLOCK = `{mol_block_escaped}`;
-
-let viewer = null;
-
-window.addEventListener('load', function() {{
-  if (!MOL_BLOCK) return;
-  const el = document.getElementById('viewer3d');
-  if (!el) return;
-  viewer = $3Dmol.createViewer(el, {{ backgroundColor: 'white' }});
-  viewer.resize();
-  showParent(document.querySelector('.frag-btn'));
-}});
-
-function applyFilter() {{
-  const mz = parseFloat(document.getElementById('massInput').value) || 0;
-  const z  = parseInt(document.getElementById('chargeInput').value) || 1;
-  const tol  = parseFloat(document.getElementById('tolInput').value) || 0;
-  
-  const targetMass = mz * z;
-  const list = document.getElementById('fragList');
-  
-  const parentBtn = list.querySelector('.frag-btn');
-  list.innerHTML = '';
-  list.appendChild(parentBtn);
-
-  const matches = ALL_FRAGS.filter(f => Math.abs(f.weight - targetMass) <= tol);
-  document.getElementById('stats').textContent = 'Found ' + matches.length + ' matches (m = ' + targetMass.toFixed(2) + ')';
-  
-  matches.forEach((frag, i) => {{
-    const btn = document.createElement('button');
-    btn.className = 'frag-btn';
-    btn.style.animationDelay = (i * 0.05) + 's';
-    btn.innerHTML = '<b>Match ' + (i+1) + '</b><small>Mass: ' + frag.weight.toFixed(4) + ' | ' + frag.formula + '</small>';
-    btn.onclick = function() {{ showFragment(frag, this); }};
-    list.appendChild(btn);
-  }});
-}}
-
-function showParent(btn) {{
-  document.querySelectorAll('.frag-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (!viewer || !MOL_BLOCK) return;
-  viewer.clear();
-  viewer.addModel(MOL_BLOCK, 'mol');
-  viewer.setStyle({{}}, {{stick:{{colorscheme:'Jmol'}}, sphere:{{radius:0.3}}}});
-  viewer.zoomTo();
-  viewer.render();
-}}
-
-function showFragment(frag, btn) {{
-  document.querySelectorAll('.frag-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (!viewer || !MOL_BLOCK) return;
-  const indices = frag.rdkit_indices || [];
-  viewer.clear();
-  viewer.addModel(MOL_BLOCK, 'mol');
-  viewer.setStyle({{}}, {{stick:{{colorscheme:'Jmol', opacity:0.1}}, sphere:{{radius:0.2, opacity:0.1}}}});
-  
-  indices.forEach(function(idx) {{
-    viewer.setStyle({{index: idx}}, {{stick:{{colorscheme:'Jmol', radius:0.18}}, sphere:{{colorscheme:'Jmol', radius:0.55}}}});
-  }});
-  viewer.zoomTo();
-  viewer.render();
-}}
-
-// Apply initial filter on load
-window.addEventListener('load', function() {{ applyFilter(); }});
-</script>
-</body>
-</html>"""
-
-    # Write self-contained HTML
-    output_dir = "3d_viewer"
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "viewer.html")
-    with open(output_path, "w") as f:
-        f.write(html)
-
-    abs_path = os.path.abspath(output_path)
-    print(f"\n---> Self-contained viewer saved: {abs_path}")
-    print("     Opening in your browser now...")
+    viewer_path = os.path.join(script_dir, "web", "index.html")
+    
+    print(f"\n---> Database updated successfully!")
+    print(f"     To view your library, open:")
+    print(f"     {viewer_path}")
+    print("\n     Note: If your browser blocks local files (CORS), start a local server:")
+    print("     python3 -m http.server 8000")
+    print("     Then open http://localhost:8000/web/index.html")
     sys.stdout.flush()
-    webbrowser.open(f"file://{abs_path}")
-
-    print("-" * 30)
-    if match_count == 0:
-        print(f"Found 0 fragments matching {target_sum} ± {error_tolerance}.")
-    else:
-        print(f"Found {match_count} fragment(s) matching {target_sum} ± {error_tolerance}.")
+    
+    try:
+        webbrowser.open(f"file://{viewer_path}")
+    except:
+        pass
 
 DEFAULT_SMILES  = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)
 
@@ -810,7 +551,7 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
              sys.stdout.flush()
              sys.exit(1)
 
-    # --- Filter and Report Matching Fragments ---
-    find_and_report_matching_fragments(all_fragments_data, TARGET_SUM, ERROR_TOLERANCE, atoms, bonds)
+    # --- Update UI Registry ---
+    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_file)
 
     print(f"Total execution time: {time.time() - start_total:.2f}s")
