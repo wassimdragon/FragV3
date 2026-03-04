@@ -1,39 +1,100 @@
-# FragV3: Combinatorial Molecular Fragmentation & Mass Spectrometry Analysis
+# FragV3 — Molecular Fragment Viewer
 
-**FragV3** is a high-performance computational tool designed for advanced mass spectrometry workflows and molecular fragmentation analysis. Built to simulate bond-breaking events, it computes exact fragment masses and generates an interactive, offline-capable 3D environment for real-time peak identification.
+FragV3 is a tool for mass spectrometry research. You give it a molecule, it calculates every possible fragment that can be produced by breaking chemical bonds, and lets you search through them interactively in a 3D web viewer.
 
+---
 
+## What it does
 
-## 🚀 Core Features
+1. **Takes a molecule** (as a SMILES string) as input
+2. **Calculates all possible fragments** that result from breaking 1, 2, 3... up to N bonds simultaneously
+3. **Saves the results** to the `fragment_data/` folder (organized by number of breaks)
+4. **Updates a library** so you can view and search all your molecules in one place
 
-### 1. High-Performance Combinatorial Fragmentation
-* **Graph-Based Bond Breaking:** Parses SMILES strings using `rdkit`, adding explicit hydrogens to construct a complete mathematical graph of atomic nodes and bond edges.
-* **Disjoint Set Union (DSU):** Implements a highly optimized DSU algorithm to rapidly resolve resulting connected components (fragments) after simulating simultaneous bond breaks.
+In the browser, you can:
+- Switch between any molecule you've computed
+- Enter an observed **m/z** value from your mass spectrometer, set a **charge state** (z), and a **tolerance**
+- Instantly see which fragments match, highlighted in 3D
 
-* **Parallel Processing:** Splits the immense combinatorial workload of large molecules across all available CPU cores using Python's `multiprocessing.Pool`.
-* **Chemical Validation:** Automatically cross-references generated fragments against standard atomic valencies to discard physically impossible chemical states.
+---
 
-### 2. Smart Caching System
-* **Cryptographic Hashing:** Generates an MD5 hash of the parent molecule's atomic configuration and your specific bond-break parameters.
-* **Incremental Saving:** Fragments are saved incrementally to the `fragment_data/` directory. Future runs with identical parameters instantly load the pre-calculated JSON dataset, bypassing redundant CPU computation.
+## Project Structure
 
-### 3. Interactive, Zero-Dependency 3D Viewer
-* **Energy-Minimization:** Uses RDKit's ETKDGv3 algorithm and MMFF force-field optimization to generate realistic 3D coordinates for the parent molecule.
-* **Self-Contained UI:** Compiles all 3D geometries and fragment data into a single, offline-capable HTML file (`3d_viewer/viewer.html`).
-* **Real-Time Mass Filtering:** Enter an observed m/z from your mass spectrometer, set a charge state, and define an error tolerance. The embedded JavaScript instantly filters the database and highlights the corresponding atoms directly on the 3D model.
+```
+FragV3/
+├── FragV3.py             # Main Python script — run this to add a new molecule
+├── web/
+│   ├── index.html        # The interactive web viewer (open this in your browser)
+│   └── 3Dmol-min.js      # 3D rendering library (works offline)
+└── fragment_data/
+    ├── manifest.json     # Registry of all computed molecules
+    ├── 12_breaks/        # Fragment data organized by number of bond breaks
+    ├── 6_breaks/
+    └── ...
+```
 
-## 💻 Setup & Usage
+---
 
-FragV3 requires Python 3 and the RDKit cheminformatics library. To get started, install the required dependency, run the script, and follow the interactive prompts in your terminal:
+## Setup
 
-1. **Install RDKit:**
-   `pip install rdkit`
-2. **Run the script:**
-   `python FragV3.py`
-3. **Molecule SMILES:** Enter your target sequence when prompted (defaults to `c1nc(=O)[nH]cc1I` / 5-Iodouracil).
-4. **Max Bond Breaks:** Enter the maximum number of simultaneous bonds to break. Type `max` to force an unconstrained calculation of every possible combination.
+You need Python 3 with RDKit installed:
 
-Once the computation finishes, FragV3 will automatically launch `3d_viewer/viewer.html` in your default web browser so you can interactively search for your mass spectrometry peaks.
+```bash
+pip install rdkit
+```
 
-## 📝 Author
-**Ouassim Hocine Hafiani, Gemini**
+---
+
+## How to use
+
+### Step 1 — Add a molecule to your library
+
+Run the script and follow the prompts:
+
+```bash
+python FragV3.py
+```
+
+- **SMILES**: paste your molecule's SMILES string (press Enter to use the default: 5-Iodouracil)
+- **Max breaks**: type `max` to explore everything, or a number (e.g. `6`) to limit it
+
+The script will calculate all fragments and save them. If you run the same molecule again, it loads from cache instantly — no recalculation needed.
+
+### Step 2 — View your library
+
+Start a local web server in the FragV3 folder:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open your browser at: **http://localhost:8000/web/index.html**
+
+### Optional — One-command shortcut (`FragV3Run`)
+
+Add this to your `~/.zshrc` file to launch everything with a single command:
+
+```bash
+FragV3Run() {
+  cd "/path/to/FragV3"
+  python3 -m http.server 8000 &
+  sleep 1
+  open http://localhost:8000/web/index.html
+  wait
+}
+```
+
+Then just type `FragV3Run` in any terminal — it starts the server and opens the browser automatically.
+
+---
+
+## Requirements
+
+- Python 3.8+
+- `rdkit` (`pip install rdkit`)
+- A modern web browser (Chrome, Firefox, Safari)
+
+---
+
+## Author
+Ouassim Hocine Hafiani

@@ -50,7 +50,7 @@ import math
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import hashlib
-import webbrowser
+
 
 # --- Helper Functions ---
 
@@ -402,22 +402,10 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)
 
-    # --- Provide Instructions ---
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    viewer_path = os.path.join(script_dir, "web", "index.html")
-    
-    print(f"\n---> Database updated successfully!")
-    print(f"     To view your library, open:")
-    print(f"     {viewer_path}")
-    print("\n     Note: If your browser blocks local files (CORS), start a local server:")
-    print("     python3 -m http.server 8000")
-    print("     Then open http://localhost:8000/web/index.html")
+
+    print("\n✅ Done! Molecule added to the library.")
+    print("   Open http://localhost:8000/web/index.html to view it.")
     sys.stdout.flush()
-    
-    try:
-        webbrowser.open(f"file://{viewer_path}")
-    except:
-        pass
 
 DEFAULT_SMILES  = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)
 
