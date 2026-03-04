@@ -336,41 +336,58 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
     sys.stdout.flush()
 
     # --- Generate 3D coordinates ---
+    # Parse directly from SMILES to preserve correct bond orders (C=O, C=C, etc.)
     mol_block = ""
-    if bonds_list:
-        print("Generating 3D coordinates (ETKDGv3)...")
+    if smiles_str:
+        print("Generating 3D coordinates...")
         sys.stdout.flush()
-        rw = Chem.RWMol()
-        idx_map = {}
-        for orig_idx in sorted(atoms_dict.keys()):
-            symbol = atoms_dict[orig_idx]
-            new_idx = rw.AddAtom(Chem.Atom(symbol))
-            idx_map[orig_idx] = new_idx
-        for a1, a2 in bonds_list:
-            if a1 in idx_map and a2 in idx_map:
-                i1, i2 = idx_map[a1], idx_map[a2]
-                if not rw.GetBondBetweenAtoms(i1, i2):
-                    rw.AddBond(i1, i2, Chem.BondType.SINGLE)
         try:
-            mol_rdkit = rw.GetMol()
+            mol_rdkit = Chem.MolFromSmiles(smiles_str)
+            if mol_rdkit is None:
+                raise ValueError(f"Could not parse SMILES: {smiles_str}")
             Chem.SanitizeMol(mol_rdkit)
-            mol_rdkit = Chem.AddHs(mol_rdkit)
+
             params = AllChem.ETKDGv3()
             params.randomSeed = 42
 
-            print("  Embedding molecule...", end="", flush=True)
-            result = AllChem.EmbedMolecule(mol_rdkit, params)
-            if result == -1:
-                mol_rdkit = Chem.RemoveHs(mol_rdkit)
-                result = AllChem.EmbedMolecule(mol_rdkit, params)
-            print(" DONE")
-
+            # Tier 1: Standard ETKDGv3 with explicit H
+            mol_h = Chem.AddHs(mol_rdkit)
+            print("  Embedding (ETKDGv3)...", end="", flush=True)
+            result = AllChem.EmbedMolecule(mol_h, params)
             if result != -1:
-                print("  Optimizing geometry...", end="", flush=True)
-                AllChem.MMFFOptimizeMolecule(mol_rdkit, maxIters=500)
+                AllChem.MMFFOptimizeMolecule(mol_h, maxIters=500)
+                mol_block = Chem.MolToMolBlock(mol_h)
                 print(" DONE")
+            else:
+                # Tier 2: ETKDGv3 without H (helps for some large/rigid molecules)
+                result = AllChem.EmbedMolecule(mol_rdkit, params)
+                if result != -1:
+                    AllChem.MMFFOptimizeMolecule(mol_rdkit, maxIters=500)
+                    mol_block = Chem.MolToMolBlock(mol_rdkit)
+                    print(" DONE (no explicit H)")
+                else:
+                    # Tier 3: Random coords + ETKDGv3 (for strained/cage molecules)
+                    params.useRandomCoords = True
+                    result = AllChem.EmbedMolecule(mol_rdkit, params)
+                    if result != -1:
+                        AllChem.UFFOptimizeMolecule(mol_rdkit, maxIters=2000)
+                        mol_block = Chem.MolToMolBlock(mol_rdkit)
+                        print(" DONE (random coords)")
+                    else:
+                        # Tier 4: 2D layout + random Z perturbation → UFF opt
+                        # (last resort for fullerenes/cages like C60)
+                        # Compute2DCoords sets z=0 (flat), so we perturb z randomly
+                        # before UFF — this lets UFF find the real 3D cage geometry.
+                        import random as _rng
+                        AllChem.Compute2DCoords(mol_rdkit)
+                        conf = mol_rdkit.GetConformer()
+                        for atom_idx in range(mol_rdkit.GetNumAtoms()):
+                            pos = conf.GetAtomPosition(atom_idx)
+                            conf.SetAtomPosition(atom_idx, (pos.x, pos.y, _rng.uniform(-2.0, 2.0)))
+                        AllChem.UFFOptimizeMolecule(mol_rdkit, maxIters=10000)
+                        mol_block = Chem.MolToMolBlock(mol_rdkit)
+                        print(" DONE (2D→UFF 3D fallback)")
 
-                mol_block = Chem.MolToMolBlock(mol_rdkit)
         except Exception as e:
             print(f"\n  Warning: 3D generation failed ({e}). Viewer will show text only.")
         sys.stdout.flush()
