@@ -540,7 +540,7 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     # If the generated file is > 50MB, move it to the 'big_files' folder
     if os.path.exists(fragment_file):
         file_size_mb = os.path.getsize(fragment_file) / (1024 * 1024)
-        if file_size_mb > 50.0:
+        if file_size_mb > 100.0:
             print(f"\n  [INFO] File is very large ({file_size_mb:.1f} MB). Moving to 'big_files' folder.")
             big_files_dir = os.path.join(os.path.dirname(fragment_file), "big_files")
             os.makedirs(big_files_dir, exist_ok=True)
