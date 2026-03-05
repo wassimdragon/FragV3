@@ -511,7 +511,8 @@
             // Always add the parent molecule
             const parentBtn = document.createElement('button');
             parentBtn.className = 'frag-btn active';
-            parentBtn.innerHTML = `<b>Parent Molecule</b><small>Structure: ${document.getElementById("activeFormula").textContent.replace("Formula: ", "").split(" |")[0]}</small>`;
+            const formulaText = document.getElementById("infoFormula").innerText.replace("Formula: ", "");
+            parentBtn.innerHTML = `<b>Parent Molecule</b><small>Structure: ${formulaText}</small>`;
             parentBtn.onclick = function () { showParent(this); };
             list.appendChild(parentBtn);
 
