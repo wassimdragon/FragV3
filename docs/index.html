@@ -365,13 +365,15 @@
 
                 let completionStr = "";
                 if (mol.total_bonds) {
-                    if (mol.max_breaks >= mol.total_bonds) {
-                        completionStr = " 🟢 MAX";
-                    } else if (mol.max_breaks >= mol.total_bonds * 0.4) {
-                        completionStr = " 🟡 MEDIUM";
+                    const percent = Math.min(100, Math.round((mol.max_breaks / mol.total_bonds) * 100));
+                    if (percent >= 100) {
+                        completionStr = ` 🟢 MAX`;
+                    } else if (percent >= 40) {
+                        completionStr = ` 🟡 MEDIUM`;
                     } else {
-                        completionStr = " 🔴 LOW";
+                        completionStr = ` 🔴 LOW`;
                     }
+                    completionStr = ` (${percent}%)${completionStr}`;
                 }
 
                 opt.textContent = `${displayName} | ${mol.max_breaks} breaks${completionStr}`;
