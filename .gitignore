@@ -1,3 +1,12 @@
-*.json
 Old_Versions/
 .DS_Store
+.venv/
+__pycache__/
+.idea/
+
+# Ignore JSON files by default (so we don't accidentally commit massive temp files)
+*.json
+
+# BUT explicitly allow the JSON files in the docs folder so they deploy to GitHub Pages
+!docs/fragment_data/**/*.json
+!docs/fragment_data/*.json

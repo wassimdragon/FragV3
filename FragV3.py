@@ -34,10 +34,10 @@ ATOM_VALENCIES = {
 
 
 FORCED_MAX_BOND_BREAKS = "max"
-CACHE_DIR = "fragment_data" # Folder for all previous results
+CACHE_DIR = "docs/fragment_data" # Folder for all previous results
 
 
-# --- Required Libraries ---C([C@@H]1[C@H]([C@@H]([C@H]([C@H](O1)O[C@]2([C@H]([C@@H]([C@H](O2)CO)O)O)CO)O)O)O)O
+# --- Required Libraries ---
 
 from itertools import combinations
 from collections import defaultdict
@@ -421,7 +421,7 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
 
 
     print("\n✅ Done! Molecule added to the library.")
-    print("   Open http://localhost:8000/web/index.html to view it.")
+    print("   Open http://localhost:8000/docs/index.html to view it.")
     sys.stdout.flush()
 
 DEFAULT_SMILES  = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)

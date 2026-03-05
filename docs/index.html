@@ -342,7 +342,7 @@
         // Fetch manifest.json
         async function fetchManifest() {
             try {
-                const response = await fetch(`../fragment_data/manifest.json?t=${new Date().getTime()}`);
+                const response = await fetch(`./fragment_data/manifest.json?t=${new Date().getTime()}`);
                 if (!response.ok) throw new Error("Manifest not found");
                 currentManifest = await response.json();
                 populateDropdown();
@@ -388,7 +388,7 @@
             document.getElementById("fragList").innerHTML = "";
 
             try {
-                const response = await fetch(`../fragment_data/${molData.file}?t=${new Date().getTime()}`);
+                const response = await fetch(`./fragment_data/${molData.file}?t=${new Date().getTime()}`);
                 if (!response.ok) throw new Error(`HTTP Error ${response.status} when fetching ${molData.file}`);
 
                 document.getElementById("stats").textContent = "File downloaded! Parsing JSON dataset...";

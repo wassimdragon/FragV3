@@ -23,14 +23,15 @@ In the browser, you can:
 ```
 FragV3/
 ├── FragV3.py             # Main Python script — run this to add a new molecule
-├── web/
-│   ├── index.html        # The interactive web viewer
-│   └── 3Dmol-min.js      # 3D rendering library (works offline)
-└── fragment_data/
-    ├── manifest.json     # Registry of all computed molecules
-    ├── 12_breaks/        # Fragment data organized by number of bond breaks
-    ├── 6_breaks/
-    └── ...
+└── docs/
+    ├── index.html        # The interactive web viewer
+    ├── 3Dmol-min.js      # 3D rendering library (works offline)
+    ├── .nojekyll         # Tells GitHub Pages to serve all files
+    └── fragment_data/    # Fragment data organized by number of bond breaks
+        ├── manifest.json
+        ├── 12_breaks/    
+        ├── 6_breaks/
+        └── ...
 ```
 
 ---
@@ -66,7 +67,7 @@ Start a local web server in the FragV3 folder:
 python3 -m http.server 8000
 ```
 
-Then open: **http://localhost:8000/web/index.html**
+Then open: **http://localhost:8000/docs/index.html**
 
 ### Optional — One-command shortcut (`FragV3Run`)
 
@@ -74,10 +75,10 @@ Add this to your `~/.zshrc` to launch everything with one command:
 
 ```bash
 FragV3Run() {
-  cd "/path/to/FragV3"
+  cd "/Users/ingedy/Library/CloudStorage/GoogleDrive-gwassimdragon@gmail.com/Other computers/Mon Ordinateur/Ouassim/SWEDEN/2023 Uppsala PhD PRISMAS/Projects/2024-04 Python Fragmetation code/FragV3"
   python3 -m http.server 8000 &
   sleep 1
-  open http://localhost:8000/web/index.html
+  open http://localhost:8000/docs/index.html
   wait
 }
 ```
