@@ -362,7 +362,19 @@
                 const opt = document.createElement("option");
                 opt.value = index;
                 const displayName = mol.name ? `${mol.name} (${mol.formula})` : mol.formula;
-                opt.textContent = `${displayName} (Breaks: ${mol.max_breaks})`;
+
+                let completionStr = "";
+                if (mol.total_bonds) {
+                    if (mol.max_breaks >= mol.total_bonds) {
+                        completionStr = " 🟢 MAX";
+                    } else if (mol.max_breaks >= mol.total_bonds * 0.4) {
+                        completionStr = " 🟡 MEDIUM";
+                    } else {
+                        completionStr = " 🔴 LOW";
+                    }
+                }
+
+                opt.textContent = `${displayName} | ${mol.max_breaks} breaks${completionStr}`;
                 select.appendChild(opt);
             });
         }

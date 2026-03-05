@@ -410,6 +410,7 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
         "formula": formula_str,
         "smiles": smiles_str,
         "max_breaks": max_breaks,
+        "total_bonds": len(bonds),
         "file": relative_file_path,
         "mol_block": mol_block
     })
