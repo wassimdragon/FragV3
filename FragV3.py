@@ -402,13 +402,11 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
         except (IOError, json.JSONDecodeError):
             pass
 
-    # Remove existing entry for this specific file if it exists to overwrite
-    # Make sure we store the relative path from CACHE_DIR so the web viewer can find it in the subfolder
-    relative_file_path = os.path.relpath(fragment_file_path, CACHE_DIR)
-    
-    manifest = [m for m in manifest if m.get("file") != relative_file_path]
+    # Remove existing entry for this specific file or SMILES if it exists to overwrite
+    manifest = [m for m in manifest if m.get("smiles") != smiles_str]
 
     manifest.append({
+        "name": custom_name,
         "formula": formula_str,
         "smiles": smiles_str,
         "max_breaks": max_breaks,
@@ -438,6 +436,10 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     # SMILES input
     smiles_input = input(f"  Molecule SMILES [{DEFAULT_SMILES}]: ").strip()
     smiles_to_use = smiles_input if smiles_input else DEFAULT_SMILES
+
+    # Custom Name input
+    name_input = input(f"  Custom Name (optional): ").strip()
+    custom_name = name_input if name_input else ""
 
     # Parse SMILES with RDKit
     _mol = Chem.MolFromSmiles(smiles_to_use)
@@ -508,55 +510,50 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
         print(f"Loading existing results: {os.path.basename(fragment_file)}")
         sys.stdout.flush()
         try:
+            # Only read the first few lines to get the metadata hash (avoids loading 139MB into memory)
             with open(fragment_file, 'r') as f:
-                saved_data = json.load(f)
-                
-            if isinstance(saved_data, dict) and 'metadata' in saved_data:
-                saved_hash = saved_data['metadata'].get('molecule_hash')
-                if saved_hash == current_mol_hash:
-                    all_fragments_data = saved_data.get('fragments', [])
-                    print(f"Cache match! Loaded {len(all_fragments_data)} fragments.")
-                    sys.stdout.flush()
-                else:
-                    print("Cache hash mismatch. Recomputing...")
-                    regenerate = True
+                head = "".join([next(f) for x in range(5)])
+            
+            if '"molecule_hash"' in head and current_mol_hash in head:
+                print(f"Cache match! File exists and hash matches.")
+                sys.stdout.flush()
             else:
-                print("Old cache format. Recomputing...")
+                print("Cache hash mismatch. Recomputing...")
+                sys.stdout.flush()
                 regenerate = True
-                
-        except (IOError, json.JSONDecodeError) as e:
-            print(f"Error reading cache {fragment_file}: {e}")
+        except Exception:
+            print("Error loading cache file. Regenerating...")
             regenerate = True
     else:
         regenerate = True
 
-    if regenerate or not all_fragments_data:
+    if regenerate:
         print("Calculating new fragments...")
         sys.stdout.flush()
+        os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
+        
+        # Process and write directly to JSON file to save memory
+        for _ in generate_unique_fragments_incrementally(atoms, bonds, max_breaks=dynamic_max_breaks, save_path=fragment_file):
+            pass # The generator handles saving
 
-        # max_breaks already determined above - just report it
-        if FORCED_MAX_BOND_BREAKS == "max":
-            print(f"Max bond breaks set to 'max' (= {dynamic_max_breaks} bonds in molecule)")
-        elif FORCED_MAX_BOND_BREAKS is not None:
-            print(f"Max bond breaks forced to: {dynamic_max_breaks}")
-        else:
-            print(f"Max bond breaks determined dynamically: {dynamic_max_breaks}")
+    # --- Big File Separation Logic ---
+    # If the generated file is > 50MB, move it to the 'big_files' folder
+    if os.path.exists(fragment_file):
+        file_size_mb = os.path.getsize(fragment_file) / (1024 * 1024)
+        if file_size_mb > 50.0:
+            print(f"\n  [INFO] File is very large ({file_size_mb:.1f} MB). Moving to 'big_files' folder.")
+            big_files_dir = os.path.join(os.path.dirname(fragment_file), "big_files")
+            os.makedirs(big_files_dir, exist_ok=True)
+            new_fragment_file = os.path.join(big_files_dir, os.path.basename(fragment_file))
+            import shutil
+            shutil.move(fragment_file, new_fragment_file)
+            fragment_file = new_fragment_file
 
-        print("-" * 30)
-        sys.stdout.flush()
-
-        all_fragments_data = [] # Clear data if regenerating
-        try:
-            # Generate fragments and populate all_fragments_data list directly
-            for fragment_data in generate_unique_fragments_incrementally(atoms, bonds, max_breaks=dynamic_max_breaks, save_path=fragment_file):
-                 all_fragments_data.append(fragment_data)
-
-        except Exception as e:
-             print(f"An unexpected error occurred during fragment generation: {e}")
-             sys.stdout.flush()
-             sys.exit(1)
+    # --- Check final file path for relative path tracking ---
+    import os.path
+    relative_file_path = os.path.relpath(fragment_file, CACHE_DIR)
 
     # --- Update UI Registry ---
-    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_file)
+    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_file, custom_name)
 
     print(f"Total execution time: {time.time() - start_total:.2f}s")

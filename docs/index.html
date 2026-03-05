@@ -361,7 +361,8 @@
             currentManifest.forEach((mol, index) => {
                 const opt = document.createElement("option");
                 opt.value = index;
-                opt.textContent = `${mol.formula} (Breaks: ${mol.max_breaks})`;
+                const displayName = mol.name ? `${mol.name} (${mol.formula})` : mol.formula;
+                opt.textContent = `${displayName} (Breaks: ${mol.max_breaks})`;
                 select.appendChild(opt);
             });
         }
