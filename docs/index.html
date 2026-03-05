@@ -297,10 +297,20 @@
     <div id="sidebar">
         <div class="header">
             <h1>Molecule Library</h1>
-            <select id="moleculeSelect" class="molecule-selector" onchange="loadSelectedMolecule()">
-                <option value="">Loading library...</option>
-            </select>
-            <div id="activeFormula" class="formula">--</div>
+            <input type="text" id="moleculeSearch" list="moleculeDatalist" class="molecule-selector"
+                placeholder="Loading library..." onchange="loadSelectedMolecule()">
+            <datalist id="moleculeDatalist"></datalist>
+
+            <details id="moreInfoDetails" style="margin-top: 15px; font-size: 13px; display: none;">
+                <summary style="color: var(--primary); font-weight: 600; cursor: pointer; user-select: none;">
+                    More info about sample
+                </summary>
+                <div style="padding-top: 8px; color: var(--text-muted); line-height: 1.5;">
+                    <div id="infoFormula"></div>
+                    <div id="infoSmiles" style="word-break: break-all; margin-top: 4px;"></div>
+                    <div id="infoBreaks" style="margin-top: 4px;"></div>
+                </div>
+            </details>
         </div>
         <div id="controls">
             <div class="row">
@@ -348,51 +358,63 @@
                 populateDropdown();
             } catch (error) {
                 console.error("Error loading manifest:", error);
-                document.getElementById("moleculeSelect").innerHTML = "<option>Error loading library</option>";
+                document.getElementById("moleculeSearch").placeholder = "Error loading library";
                 document.getElementById("stats").textContent = `Manifest Load Error: ${error.message}`;
             }
         }
 
-        // Populate the selector based on manifest
+        // Populate the datalist based on manifest
         function populateDropdown() {
-            const select = document.getElementById("moleculeSelect");
-            select.innerHTML = "<option value=''>-- Select a Molecule --</option>";
+            const datalist = document.getElementById("moleculeDatalist");
+            datalist.innerHTML = "";
+            const searchInput = document.getElementById("moleculeSearch");
+            searchInput.placeholder = "Search or type to select...";
 
             currentManifest.forEach((mol, index) => {
                 const opt = document.createElement("option");
-                opt.value = index;
                 const displayName = mol.name ? `${mol.name} (${mol.formula})` : mol.formula;
-
-                let completionStr = "";
-                if (mol.total_bonds) {
-                    const percent = Math.min(100, Math.round((mol.max_breaks / mol.total_bonds) * 100));
-                    if (percent >= 100) {
-                        completionStr = ` 🟢 MAX`;
-                    } else if (percent >= 40) {
-                        completionStr = ` 🟡 MEDIUM`;
-                    } else {
-                        completionStr = ` 🔴 LOW`;
-                    }
-                    completionStr = ` (${percent}%)${completionStr}`;
-                }
-
-                opt.textContent = `${displayName} | ${mol.max_breaks} breaks${completionStr}`;
-                select.appendChild(opt);
+                opt.value = displayName;
+                datalist.appendChild(opt);
             });
         }
 
         // When user selects a molecule from dropdown
         async function loadSelectedMolecule() {
-            const select = document.getElementById("moleculeSelect");
-            const index = select.value;
-
-            if (index === "") {
+            const searchVal = document.getElementById("moleculeSearch").value;
+            if (!searchVal) {
                 resetViewer();
+                document.getElementById("moreInfoDetails").style.display = "none";
                 return;
             }
 
+            const index = currentManifest.findIndex(m => {
+                const dName = m.name ? `${m.name} (${m.formula})` : m.formula;
+                return dName === searchVal;
+            });
+
+            if (index === -1) return; // Still typing or bad selection
+
             const molData = currentManifest[index];
-            document.getElementById("activeFormula").textContent = `Formula: ${molData.formula} | SMILES: ${molData.smiles}`;
+
+            // Build completion string
+            let completionStr = "";
+            if (molData.total_bonds) {
+                const percent = Math.min(100, Math.round((molData.max_breaks / molData.total_bonds) * 100));
+                if (percent >= 100) {
+                    completionStr = ` 🟢 MAX`;
+                } else if (percent >= 40) {
+                    completionStr = ` 🟡 MEDIUM`;
+                } else {
+                    completionStr = ` 🔴 LOW`;
+                }
+                completionStr = `${percent}% generated${completionStr}`;
+            }
+
+            // Populate Info Pane
+            document.getElementById("moreInfoDetails").style.display = "block";
+            document.getElementById("infoFormula").innerHTML = `<b>Formula:</b> ${molData.formula}`;
+            document.getElementById("infoSmiles").innerHTML = `<b>SMILES:</b> <span style="font-family: monospace;">${molData.smiles}</span>`;
+            document.getElementById("infoBreaks").innerHTML = `<b>Completeness:</b> ${molData.max_breaks} breaks (${molData.total_bonds ? completionStr : 'Unknown'})`;
 
             // Show loader
             document.getElementById("viewer3d").style.display = "none";
