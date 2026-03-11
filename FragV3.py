@@ -326,7 +326,7 @@ def get_fragment_cache_path(formula, smiles, max_breaks):
     return os.path.join(subfolder_path, filename)
 
 
-def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smiles_str, max_breaks, fragment_file_path):
+def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smiles_str, max_breaks, fragment_file_path, custom_name=""):
     """
     Generates 3D coordinates and updates the central manifest.json
     so the SPA viewer can pick up the new molecule.
