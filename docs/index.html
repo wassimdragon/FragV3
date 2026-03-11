@@ -515,13 +515,67 @@
                 const matches = ALL_FRAGS.filter(f => Math.abs(f.weight - targetMass) <= tol);
                 document.getElementById('stats').textContent = 'Found ' + matches.length + ' matches (m = ' + targetMass.toFixed(2) + ')';
 
+                const groupedMatches = {};
                 matches.forEach((frag, i) => {
-                    const btn = document.createElement('button');
-                    btn.className = 'frag-btn';
-                    btn.style.animationDelay = (i * 0.05) + 's';
-                    btn.innerHTML = '<b>Match ' + (i + 1) + '</b><small>Mass: ' + frag.weight.toFixed(4) + ' | ' + frag.formula + '</small>';
-                    btn.onclick = function () { showFragment(frag, this); };
-                    list.appendChild(btn);
+                    if (!groupedMatches[frag.formula]) {
+                        groupedMatches[frag.formula] = [];
+                    }
+                    groupedMatches[frag.formula].push({frag: frag, originalIndex: i});
+                });
+
+                Object.keys(groupedMatches).forEach(formula => {
+                    const groupTitle = document.createElement('div');
+                    groupTitle.style.cursor = 'pointer';
+                    groupTitle.style.display = 'block';
+                    groupTitle.style.width = '100%';
+                    groupTitle.style.marginBottom = '5px';
+                    groupTitle.style.padding = '10px 14px';
+                    groupTitle.style.background = 'rgba(255, 255, 255, 0.05)';
+                    groupTitle.style.border = '1px solid var(--border)';
+                    groupTitle.style.borderRadius = '8px';
+                    groupTitle.style.color = 'var(--text-main)';
+                    groupTitle.style.fontSize = '14px';
+                    groupTitle.style.fontWeight = '600';
+                    groupTitle.innerHTML = `<span style="display:inline-block; transition: transform 0.2s;" class="dropdown-arrow">▶</span> ${formula} <span style="float:right; color:var(--text-muted); font-size:12px;">${groupedMatches[formula].length} isomeric matches</span>`;
+                    
+                    const matchesContainer = document.createElement('div');
+                    matchesContainer.style.display = 'none';
+                    matchesContainer.style.paddingLeft = '10px';
+                    matchesContainer.style.borderLeft = '2px solid var(--border)';
+                    matchesContainer.style.marginLeft = '5px';
+                    matchesContainer.style.marginTop = '8px';
+                    matchesContainer.style.marginBottom = '15px';
+
+                    groupTitle.onclick = function() {
+                        const arrow = this.querySelector('.dropdown-arrow');
+                        if (matchesContainer.style.display === 'none') {
+                            matchesContainer.style.display = 'block';
+                            arrow.style.transform = 'rotate(90deg)';
+                        } else {
+                            matchesContainer.style.display = 'none';
+                            arrow.style.transform = 'rotate(0deg)';
+                        }
+                    };
+
+                    groupedMatches[formula].forEach(item => {
+                        const frag = item.frag;
+                        const i = item.originalIndex;
+                        const btn = document.createElement('button');
+                        btn.className = 'frag-btn';
+                        btn.style.animationDelay = (i * 0.05) + 's';
+                        btn.style.marginBottom = '8px';
+                        btn.innerHTML = '<b>Match ' + (i + 1) + '</b><small>Mass: ' + frag.weight.toFixed(4) + '</small>';
+                        btn.onclick = function () { 
+                            // Remove active class from all buttons
+                            document.querySelectorAll('.frag-btn').forEach(b => b.classList.remove('active'));
+                            this.classList.add('active');
+                            showFragment(frag, this); 
+                        };
+                        matchesContainer.appendChild(btn);
+                    });
+
+                    list.appendChild(groupTitle);
+                    list.appendChild(matchesContainer);
                 });
             } else {
                 document.getElementById('stats').textContent = `Total fragments loaded: ${ALL_FRAGS.length}`;
