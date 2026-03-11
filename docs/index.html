@@ -298,9 +298,9 @@
     <div id="sidebar">
         <div class="header">
             <h1>Molecule Library</h1>
-            <input type="text" id="moleculeSearch" list="moleculeDatalist" class="molecule-selector"
-                placeholder="Loading library..." onchange="loadSelectedMolecule()">
-            <datalist id="moleculeDatalist"></datalist>
+            <select id="moleculeSelect" class="molecule-selector" onchange="loadSelectedMolecule()">
+                <option value="">Loading library...</option>
+            </select>
 
             <details id="moreInfoDetails" style="margin-top: 15px; font-size: 13px; display: none;">
                 <summary style="color: var(--primary); font-weight: 600; cursor: pointer; user-select: none;">
@@ -359,41 +359,35 @@
                 populateDropdown();
             } catch (error) {
                 console.error("Error loading manifest:", error);
-                document.getElementById("moleculeSearch").placeholder = "Error loading library";
+                document.getElementById("moleculeSelect").innerHTML = "<option>Error loading library</option>";
                 document.getElementById("stats").textContent = `Manifest Load Error: ${error.message}`;
             }
         }
 
-        // Populate the datalist based on manifest
+        // Populate the selector based on manifest
         function populateDropdown() {
-            const datalist = document.getElementById("moleculeDatalist");
-            datalist.innerHTML = "";
-            const searchInput = document.getElementById("moleculeSearch");
-            searchInput.placeholder = "Search or type to select...";
+            const select = document.getElementById("moleculeSelect");
+            select.innerHTML = "<option value=''>-- Select a Molecule --</option>";
 
             currentManifest.forEach((mol, index) => {
                 const opt = document.createElement("option");
                 const displayName = mol.name ? `${mol.name} (${mol.formula})` : mol.formula;
-                opt.value = displayName;
-                datalist.appendChild(opt);
+                opt.value = index;
+                opt.textContent = displayName;
+                select.appendChild(opt);
             });
         }
 
         // When user selects a molecule from dropdown
         async function loadSelectedMolecule() {
-            const searchVal = document.getElementById("moleculeSearch").value;
-            if (!searchVal) {
+            const select = document.getElementById("moleculeSelect");
+            const index = select.value;
+
+            if (index === "") {
                 resetViewer();
                 document.getElementById("moreInfoDetails").style.display = "none";
                 return;
             }
-
-            const index = currentManifest.findIndex(m => {
-                const dName = m.name ? `${m.name} (${m.formula})` : m.formula;
-                return dName === searchVal;
-            });
-
-            if (index === -1) return; // Still typing or bad selection
 
             const molData = currentManifest[index];
 
