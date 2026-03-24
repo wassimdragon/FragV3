@@ -226,11 +226,27 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
                 processed_combinations += 1
                 
                 if processed_combinations % 100 == 0 or processed_combinations == num_combinations:
+                    elapsed = time.time() - start_time
                     percent = (processed_combinations / num_combinations) * 100
                     bar_length = 30
                     filled_length = int(bar_length * processed_combinations // num_combinations)
                     bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                    print(f"\r  Progress: |{bar}| {percent:6.2f}% ({processed_combinations}/{num_combinations})", end="", flush=True)
+                    
+                    # Calculate ETA
+                    if processed_combinations > 0:
+                        rate = processed_combinations / elapsed
+                        remaining = num_combinations - processed_combinations
+                        eta_seconds = remaining / rate
+                        if eta_seconds > 3600:
+                            eta_str = f"{int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
+                        elif eta_seconds > 60:
+                            eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                        else:
+                            eta_str = f"{int(eta_seconds)}s"
+                    else:
+                        eta_str = "Calculating..."
+                        
+                    print(f"\r  Progress: |{bar}| {percent:6.2f}% ({processed_combinations}/{num_combinations}) ETA: {eta_str}    ", end="", flush=True)
 
                 if sublist:
                     for fragment_indices in sublist:
