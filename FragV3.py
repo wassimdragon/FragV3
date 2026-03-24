@@ -50,6 +50,7 @@ import math
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import hashlib
+import glob
 
 
 # --- Helper Functions ---
@@ -166,9 +167,12 @@ def process_bond_break(broken_bonds_tuple):
 
 def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, save_path):
     """
-    Generates unique valid fragments incrementally using multiprocessing and yields them.
-    Saves fragments to file as they are generated.
+    Generates unique valid fragments incrementally using multiprocessing and saves them.
+    Splits into multiple files if size exceeds 80MB.
+    Returns a list of generated file paths.
     """
+    MAX_PART_SIZE = 80 * 1024 * 1024 # 80MB
+    parts = []
     start_time = time.time()
 
     bond_combinations_generator = generate_bond_breaks(bonds_list, max_breaks)
@@ -201,65 +205,76 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
     unique_count = 0
 
     processed_combinations = 0
+    current_part = 1
+    current_save_path = save_path.replace(".json", f"_part{current_part}.json")
+    parts.append(current_save_path)
+    
     try:
         # Initialize worker processes with the large read-only data
         with Pool(processes=cpu_count(), initializer=init_worker, initargs=(atoms_dict, list(bonds_list))) as pool:
-            # Use a fixed reasonable chunksize or estimate it. 
-            # Since we have num_combinations, we can estimate.
             chunksize = max(1, num_combinations // (cpu_count() * 4))
-            chunksize = min(chunksize, 1000) # Cap it to keep updates flowing
+            chunksize = min(chunksize, 1000)
             
             results_iterator = pool.imap_unordered(process_bond_break, bond_combinations_generator, chunksize=100)
 
-            # Write JSON with metadata including molecule hash (includes max_breaks)
-            with open(save_path, 'w') as f:
-                current_hash = generate_molecule_hash(atoms_dict, list(bonds_list), max_breaks)
-                f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '"},\n  "fragments": [\n')
-                first_fragment = True
+            current_hash = generate_molecule_hash(atoms_dict, list(bonds_list), max_breaks)
+            f = open(current_save_path, 'w')
+            f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
+            first_fragment_in_part = True
 
-                for sublist in results_iterator:
-                    processed_combinations += 1
-                    
-                    # Update progress bar in terminal
-                    if processed_combinations % 100 == 0 or processed_combinations == num_combinations:
-                        percent = (processed_combinations / num_combinations) * 100
-                        bar_length = 30
-                        filled_length = int(bar_length * processed_combinations // num_combinations)
-                        bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                        print(f"\r  Progress: |{bar}| {percent:6.2f}% ({processed_combinations}/{num_combinations})", end="", flush=True)
-
-                    if sublist:
-                        for fragment_indices in sublist:
-                            generated_count += 1
-                            indices_tuple = tuple(fragment_indices)
-
-                            if indices_tuple not in seen_indices:
-                                seen_indices.add(indices_tuple)
-                                unique_count += 1
-
-                                weight = calculate_molecular_weight(fragment_indices, atoms_dict)
-                                formula, _ = format_fragment(fragment_indices, atoms_dict)
-
-                                fragment_data = [fragment_indices, weight, formula]
-
-                                if not first_fragment:
-                                    f.write(',')
-                                json.dump(fragment_data, f, separators=(',', ':'))
-                                first_fragment = False
-
-                                yield fragment_data # Yield the fragment data dictionary
-
-                f.write('\n  ]\n}') # End JSON array and object
-                print() # New line after progress bar
+            for sublist in results_iterator:
+                processed_combinations += 1
                 
-                print(f"Finished generating and saving {unique_count} unique fragments (from {generated_count} total generated) to {save_path}")
-                sys.stdout.flush()
+                if processed_combinations % 100 == 0 or processed_combinations == num_combinations:
+                    percent = (processed_combinations / num_combinations) * 100
+                    bar_length = 30
+                    filled_length = int(bar_length * processed_combinations // num_combinations)
+                    bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                    print(f"\r  Progress: |{bar}| {percent:6.2f}% ({processed_combinations}/{num_combinations})", end="", flush=True)
+
+                if sublist:
+                    for fragment_indices in sublist:
+                        generated_count += 1
+                        indices_tuple = tuple(fragment_indices)
+
+                        if indices_tuple not in seen_indices:
+                            seen_indices.add(indices_tuple)
+                            unique_count += 1
+
+                            # Check if we need to rotate to a new part
+                            if f.tell() > MAX_PART_SIZE:
+                                f.write('\n  ]\n}')
+                                f.close()
+                                
+                                current_part += 1
+                                current_save_path = save_path.replace(".json", f"_part{current_part}.json")
+                                parts.append(current_save_path)
+                                
+                                f = open(current_save_path, 'w')
+                                f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
+                                first_fragment_in_part = True
+
+                            weight = calculate_molecular_weight(fragment_indices, atoms_dict)
+                            formula, _ = format_fragment(fragment_indices, atoms_dict)
+                            fragment_data = [fragment_indices, weight, formula]
+
+                            if not first_fragment_in_part:
+                                f.write(',')
+                            json.dump(fragment_data, f, separators=(',', ':'))
+                            first_fragment_in_part = False
+
+            f.write('\n  ]\n}')
+            f.close()
 
     except Exception as e:
-        print(f"\nError during fragment generation: {e}")
-        print("Consider reducing max_breaks or simplifying the molecule.")
-        # The generator will stop here
-        return
+        print(f"\nError during generation: {e}")
+        raise
+    finally:
+        print() # New line after progress bar
+
+    print(f"Finished generating and saving {unique_count} unique fragments (from {generated_count} total generated) to {len(parts)} parts.")
+    sys.stdout.flush()
+    return parts
 
 def format_fragment(fragment_indices, atoms_dict):
     """Formats a fragment into a chemical formula string and composition dict."""
@@ -326,7 +341,7 @@ def get_fragment_cache_path(formula, smiles, max_breaks):
     return os.path.join(subfolder_path, filename)
 
 
-def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smiles_str, max_breaks, fragment_file_path, custom_name=""):
+def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smiles_str, max_breaks, fragment_files, custom_name=""):
     """
     Generates 3D coordinates and updates the central manifest.json
     so the SPA viewer can pick up the new molecule.
@@ -410,8 +425,8 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
         "formula": formula_str,
         "smiles": smiles_str,
         "max_breaks": max_breaks,
-        "total_bonds": len(bonds),
-        "file": relative_file_path,
+        "total_bonds": len(bonds_list),
+        "file": fragment_files, # This is now a list of relative paths
         "mol_block": mol_block
     })
 
@@ -507,23 +522,28 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
 
     # --- Load or Generate Fragments ---
     regenerate = False
-    if os.path.exists(fragment_file):
-        print(f"Loading existing results: {os.path.basename(fragment_file)}")
+    fragment_files = []
+    
+    # Check for existing parts
+    base_cache_name = os.path.basename(fragment_file).replace(".json", "")
+    existing_parts = sorted(glob.glob(os.path.join(os.path.dirname(fragment_file), f"{base_cache_name}_part*.json")))
+    
+    if existing_parts:
+        print(f"Loading existing results: {len(existing_parts)} parts found.")
         sys.stdout.flush()
         try:
-            # Only read the first few lines to get the metadata hash (avoids loading 139MB into memory)
-            with open(fragment_file, 'r') as f:
+            # Check the hash of the first part
+            with open(existing_parts[0], 'r') as f:
                 head = "".join([next(f) for x in range(5)])
             
             if '"molecule_hash"' in head and current_mol_hash in head:
-                print(f"Cache match! File exists and hash matches.")
+                print(f"Cache match! All parts match hash.")
+                fragment_files = [os.path.relpath(p, CACHE_DIR) for p in existing_parts]
                 sys.stdout.flush()
             else:
                 print("Cache hash mismatch. Recomputing...")
-                sys.stdout.flush()
                 regenerate = True
         except Exception:
-            print("Error loading cache file. Regenerating...")
             regenerate = True
     else:
         regenerate = True
@@ -533,28 +553,15 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
         sys.stdout.flush()
         os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
         
-        # Process and write directly to JSON file to save memory
-        for _ in generate_unique_fragments_incrementally(atoms, bonds, max_breaks=dynamic_max_breaks, save_path=fragment_file):
-            pass # The generator handles saving
+        # Remove old parts if recomputing
+        for p in existing_parts:
+            try: os.remove(p)
+            except: pass
 
-    # --- Big File Separation Logic ---
-    # If the generated file is > 50MB, move it to the 'big_files' folder
-    if os.path.exists(fragment_file):
-        file_size_mb = os.path.getsize(fragment_file) / (1024 * 1024)
-        if file_size_mb > 100.0:
-            print(f"\n  [INFO] File is very large ({file_size_mb:.1f} MB). Moving to 'big_files' folder.")
-            big_files_dir = os.path.join(os.path.dirname(fragment_file), "big_files")
-            os.makedirs(big_files_dir, exist_ok=True)
-            new_fragment_file = os.path.join(big_files_dir, os.path.basename(fragment_file))
-            import shutil
-            shutil.move(fragment_file, new_fragment_file)
-            fragment_file = new_fragment_file
-
-    # --- Check final file path for relative path tracking ---
-    import os.path
-    relative_file_path = os.path.relpath(fragment_file, CACHE_DIR)
+        generated_parts = generate_unique_fragments_incrementally(atoms, bonds, max_breaks=dynamic_max_breaks, save_path=fragment_file)
+        fragment_files = [os.path.relpath(p, CACHE_DIR) for p in generated_parts]
 
     # --- Update UI Registry ---
-    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_file, custom_name)
+    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_files, custom_name)
 
     print(f"Total execution time: {time.time() - start_total:.2f}s")

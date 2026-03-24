@@ -416,19 +416,30 @@
             document.getElementById("no-mol").style.display = "flex";
             document.getElementById("loader").style.display = "block";
             document.getElementById("viewer-msg").textContent = "Loading fragments data... (This may take a minute for huge files)";
-            document.getElementById("stats").textContent = "Fetching " + molData.file + "...";
+            // Handle potentially multiple parts
+            const fileList = Array.isArray(molData.file) ? molData.file : [molData.file];
+            document.getElementById("stats").textContent = `Fetching ${fileList.length} parts...`;
             document.getElementById("fragList").innerHTML = "";
 
             try {
-                const response = await fetch(`./fragment_data/${molData.file}?t=${new Date().getTime()}`);
-                if (!response.ok) throw new Error(`HTTP Error ${response.status} when fetching ${molData.file}`);
+                // Fetch all parts in parallel
+                const fetchPromises = fileList.map(async (file, i) => {
+                    const resp = await fetch(`./fragment_data/${file}?t=${new Date().getTime()}`);
+                    if (!resp.ok) throw new Error(`HTTP Error ${resp.status} for part ${i + 1}`);
+                    return resp.json();
+                });
 
-                document.getElementById("stats").textContent = "File downloaded! Parsing JSON dataset...";
+                const partsData = await Promise.all(fetchPromises);
+                document.getElementById("stats").textContent = "All parts downloaded! Merging and parsing...";
 
-                const data = await response.json();
+                // Combine fragments from all parts
+                let allRawFragments = [];
+                partsData.forEach(p => {
+                    if (p.fragments) allRawFragments = allRawFragments.concat(p.fragments);
+                });
 
                 // Process fragments for UI
-                ALL_FRAGS = data.fragments.map(f => {
+                ALL_FRAGS = allRawFragments.map(f => {
                     if (Array.isArray(f)) {
                         // New compact schema: [indices, weight, formula]
                         return {
