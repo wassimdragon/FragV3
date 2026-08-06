@@ -4,12 +4,7 @@ Old_Versions/
 __pycache__/
 .idea/
 
-# Ignore JSON files by default (so we don't accidentally commit massive temp files)
+# Ignore JSON files and fragment data directory by default to prevent Google Drive sync slowdowns
 *.json
+docs/fragment_data/
 
-# BUT explicitly allow the JSON files in the docs folder so they deploy to GitHub Pages
-!docs/fragment_data/**/*.json
-!docs/fragment_data/*.json
-
-# GitHub blocks files > 100MB. Explicitly exclude massive datasets like Sucrose (139MB)
-docs/fragment_data/6_breaks/C12H22O11_3344d9a686.json
