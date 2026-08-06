@@ -47,6 +47,12 @@ import sys
 import json
 import os
 import math
+
+# Immediate startup feedback while loading C++ libraries from Google Drive
+print("=" * 50, flush=True)
+print("  Molecular Fragment Finder (loading RDKit...)", flush=True)
+print("=" * 50, flush=True)
+
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import hashlib
@@ -461,16 +467,19 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     start_total = time.time()
 
     # --- Interactive inputs ---
-    print("=" * 50)
-    print("  Molecular Fragment Finder")
-    print("=" * 50)
+    print("\n  Ready for input!\n", flush=True)
+    sys.stdout.flush()
 
     # SMILES input
-    smiles_input = input(f"  Molecule SMILES [{DEFAULT_SMILES}]: ").strip()
+    sys.stdout.write(f"  Molecule SMILES [{DEFAULT_SMILES}]: ")
+    sys.stdout.flush()
+    smiles_input = sys.stdin.readline().strip()
     smiles_to_use = smiles_input if smiles_input else DEFAULT_SMILES
 
     # Custom Name input
-    name_input = input(f"  Custom Name (optional): ").strip()
+    sys.stdout.write("  Custom Name (optional): ")
+    sys.stdout.flush()
+    name_input = sys.stdin.readline().strip()
     custom_name = name_input if name_input else ""
 
     # Parse SMILES with RDKit
@@ -490,7 +499,9 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     print(f"  Parsed molecule: {formula_str}  ({len(atoms)} atoms, {len(bonds)} bonds)")
 
     # Max Breaks
-    breaks_input = input(f"  Max Bond Breaks ['max', 1, 2, ...] [{FORCED_MAX_BOND_BREAKS}]: ").strip()
+    sys.stdout.write(f"  Max Bond Breaks ['max', 1, 2, ...] [{FORCED_MAX_BOND_BREAKS}]: ")
+    sys.stdout.flush()
+    breaks_input = sys.stdin.readline().strip()
     if breaks_input:
         if breaks_input.lower() == "max":
             FORCED_MAX_BOND_BREAKS = "max"
