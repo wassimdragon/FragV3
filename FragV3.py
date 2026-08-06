@@ -48,11 +48,6 @@ import json
 import os
 import math
 
-# Immediate startup feedback while loading C++ libraries from Google Drive
-print("=" * 50, flush=True)
-print("  Molecular Fragment Finder (loading RDKit...)", flush=True)
-print("=" * 50, flush=True)
-
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import hashlib
@@ -467,8 +462,9 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     start_total = time.time()
 
     # --- Interactive inputs ---
-    print("\n  Ready for input!\n", flush=True)
-    sys.stdout.flush()
+    print("=" * 50, flush=True)
+    print("  Molecular Fragment Finder", flush=True)
+    print("=" * 50, flush=True)
 
     # SMILES input
     sys.stdout.write(f"  Molecule SMILES [{DEFAULT_SMILES}]: ")
