@@ -4,7 +4,11 @@ Old_Versions/
 __pycache__/
 .idea/
 
-# Ignore JSON files and fragment data directory by default to prevent Google Drive sync slowdowns
+# Ignore root json temp files
 *.json
-docs/fragment_data/
+
+# Always track manifest.json and fragment data JSON files so commits show in Git
+!docs/fragment_data/manifest.json
+!docs/fragment_data/*/*.json
+!docs/fragment_data/*/*/*.json
 
