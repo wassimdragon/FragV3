@@ -462,7 +462,7 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
     manifest = [m for m in manifest if m.get("smiles") != smiles_str]
 
     manifest.append({
-        "name": custom_name,
+        "name": custom_name if custom_name else formula_str,
         "formula": formula_str,
         "smiles": smiles_str,
         "max_breaks": max_breaks,
@@ -479,7 +479,8 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
     print("   Open http://localhost:8000/docs/index.html to view it.")
     sys.stdout.flush()
 
-DEFAULT_SMILES  = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)
+DEFAULT_SMILES = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)
+DEFAULT_NAME   = "5-Iodouracil"
 
 # -------- Main Execution --------
 if __name__ == "__main__":  # Ensure multiprocessing works correctly
@@ -497,10 +498,15 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     smiles_to_use = smiles_input if smiles_input else DEFAULT_SMILES
 
     # Custom Name input
-    sys.stdout.write("  Custom Name (optional): ")
+    sys.stdout.write(f"  Custom Name (optional) [{DEFAULT_NAME}]: ")
     sys.stdout.flush()
     name_input = sys.stdin.readline().strip()
-    custom_name = name_input if name_input else ""
+    if name_input:
+        custom_name = name_input
+    elif smiles_to_use == DEFAULT_SMILES:
+        custom_name = DEFAULT_NAME
+    else:
+        custom_name = ""
 
     # Parse SMILES with RDKit
     _mol = Chem.MolFromSmiles(smiles_to_use)
