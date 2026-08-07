@@ -28,8 +28,10 @@ def add_molecule(smiles, custom_name, max_breaks=None):
     elif isinstance(max_breaks, str) and max_breaks.isdigit():
         max_breaks = int(max_breaks)
 
+    is_max = (max_breaks >= len(bonds))
+    status_label = "[THIS IS THE MAXIMUM]" if is_max else f"[THIS IS NOT THE MAX, optimal cap for < 2 min run]"
     print(f"Processing '{custom_name}' ({formula_str})...")
-    print(f"  Atoms: {len(atoms)}, Bonds: {len(bonds)}, Max Breaks: {max_breaks} (Optimal cap < 2 min)")
+    print(f"  Atoms: {len(atoms)}, Bonds: {len(bonds)}, Max Breaks: {max_breaks} {status_label}")
 
     fragment_file = FragV3.get_fragment_cache_path(formula_str, smiles, max_breaks)
     os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
