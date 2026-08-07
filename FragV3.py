@@ -32,9 +32,33 @@ ATOM_VALENCIES = {
 
 # --- User Defined Parameters ---
 
-
-FORCED_MAX_BOND_BREAKS = "max"
+FORCED_MAX_BOND_BREAKS = "auto"  # Defaults to optimal calculation (< 2 min runtime)
 CACHE_DIR = "docs/fragment_data" # Folder for all previous results
+
+def calculate_optimal_max_breaks(num_bonds, target_max_combos=1_500_000, absolute_cap=12):
+    """
+    Calculates the optimal maximum bond breaks for a molecule with `num_bonds`
+    to ensure computation finishes in under 2 minutes (typically < 30s).
+    """
+    if num_bonds <= 0:
+        return 1
+
+    total_combos = 0
+    best_breaks = 1
+    for k in range(1, num_bonds + 1):
+        try:
+            combos_at_k = math.comb(num_bonds, k)
+        except AttributeError:
+            combos_at_k = math.factorial(num_bonds) // (math.factorial(k) * math.factorial(num_bonds - k))
+        
+        if total_combos + combos_at_k > target_max_combos and k > 1:
+            break
+        total_combos += combos_at_k
+        best_breaks = k
+        if k >= absolute_cap:
+            break
+
+    return best_breaks
 
 
 # --- Required Libraries ---
@@ -495,22 +519,28 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     print(f"  Parsed molecule: {formula_str}  ({len(atoms)} atoms, {len(bonds)} bonds)")
 
     # Max Breaks
-    sys.stdout.write(f"  Max Bond Breaks ['max', 1, 2, ...] [{FORCED_MAX_BOND_BREAKS}]: ")
+    optimal_breaks = calculate_optimal_max_breaks(len(bonds))
+    sys.stdout.write(f"  Max Bond Breaks ['max', 'auto', 1, 2, ...] [optimal={optimal_breaks}]: ")
     sys.stdout.flush()
     breaks_input = sys.stdin.readline().strip()
     if breaks_input:
         if breaks_input.lower() == "max":
             FORCED_MAX_BOND_BREAKS = "max"
+        elif breaks_input.lower() in ("auto", "opt", "optimal"):
+            FORCED_MAX_BOND_BREAKS = "auto"
         else:
             try:
                 FORCED_MAX_BOND_BREAKS = int(breaks_input)
             except ValueError:
-                print(f"  Invalid input '{breaks_input}'. Using default {FORCED_MAX_BOND_BREAKS}.")
+                print(f"  Invalid input '{breaks_input}'. Using optimal default {optimal_breaks}.")
+                FORCED_MAX_BOND_BREAKS = "auto"
+    else:
+        FORCED_MAX_BOND_BREAKS = "auto"
 
     print("=" * 50)
     print(f"  Running: {formula_str}")
     print(f"  Mode: Generate all possible fragments (filter in browser)")
-    print(f"  Max Breaks: {FORCED_MAX_BOND_BREAKS}")
+    print(f"  Max Breaks Choice: {FORCED_MAX_BOND_BREAKS}")
     print("=" * 50)
 
     # --- Validate ---
@@ -532,11 +562,21 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     # Determine max_breaks early so it's included in the cache hash
     if FORCED_MAX_BOND_BREAKS == "max":
         dynamic_max_breaks = len(bonds)  # Fully unconstrained: try every possible bond break count
-        print(f"Max bond breaks set to 'max' -> using all {dynamic_max_breaks} bonds in the molecule.")
+        print(f"Max bond breaks set to 'max' -> using ALL {dynamic_max_breaks} bonds (THIS IS THE MAXIMUM).")
         if dynamic_max_breaks > 15:
             print(f"  WARNING: {dynamic_max_breaks} bonds is very large. Computation may take a very long time.")
-    elif FORCED_MAX_BOND_BREAKS is not None:
+    elif FORCED_MAX_BOND_BREAKS == "auto" or FORCED_MAX_BOND_BREAKS is None:
+        dynamic_max_breaks = calculate_optimal_max_breaks(len(bonds))
+        if dynamic_max_breaks < len(bonds):
+            print(f"Max bond breaks set to AUTO OPTIMAL ({dynamic_max_breaks} of {len(bonds)} bonds) [THIS IS NOT THE MAX, optimized to finish in < 2 min]. Type 'max' if you want all {len(bonds)} breaks.")
+        else:
+            print(f"Max bond breaks set to AUTO ({dynamic_max_breaks} of {len(bonds)} bonds) [THIS IS THE MAXIMUM].")
+    elif isinstance(FORCED_MAX_BOND_BREAKS, int):
         dynamic_max_breaks = FORCED_MAX_BOND_BREAKS
+        if dynamic_max_breaks < len(bonds):
+            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds)} bonds [THIS IS NOT THE MAX].")
+        else:
+            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds)} bonds [THIS IS THE MAXIMUM].")
     else:
         dynamic_max_breaks = get_max_valency_from_molecule(atoms, ATOM_VALENCIES, bonds)
 

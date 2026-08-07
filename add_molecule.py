@@ -10,7 +10,7 @@ from rdkit.Chem import AllChem
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import FragV3
 
-def add_molecule(smiles, custom_name, max_breaks=3):
+def add_molecule(smiles, custom_name, max_breaks=None):
     start_time = time.time()
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -21,8 +21,15 @@ def add_molecule(smiles, custom_name, max_breaks=3):
     bonds = [(b.GetBeginAtomIdx() + 1, b.GetEndAtomIdx() + 1) for b in mol.GetBonds()]
     formula_str, _ = FragV3.format_fragment(list(atoms.keys()), atoms)
 
+    if max_breaks is None or max_breaks in ("auto", "opt", "optimal"):
+        max_breaks = FragV3.calculate_optimal_max_breaks(len(bonds))
+    elif max_breaks == "max":
+        max_breaks = len(bonds)
+    elif isinstance(max_breaks, str) and max_breaks.isdigit():
+        max_breaks = int(max_breaks)
+
     print(f"Processing '{custom_name}' ({formula_str})...")
-    print(f"  Atoms: {len(atoms)}, Bonds: {len(bonds)}, Max Breaks: {max_breaks}")
+    print(f"  Atoms: {len(atoms)}, Bonds: {len(bonds)}, Max Breaks: {max_breaks} (Optimal cap < 2 min)")
 
     fragment_file = FragV3.get_fragment_cache_path(formula_str, smiles, max_breaks)
     os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
@@ -88,5 +95,6 @@ def add_molecule(smiles, custom_name, max_breaks=3):
 if __name__ == '__main__':
     smiles_arg = sys.argv[1] if len(sys.argv) > 1 else "C1[C@@H]([C@H](O[C@H]1N2C=CC(=O)NC2=O)C(O)I)O"
     name_arg = sys.argv[2] if len(sys.argv) > 2 else "5'-Iododeoxyuridine"
-    breaks_arg = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    raw_breaks = sys.argv[3] if len(sys.argv) > 3 else "auto"
+    breaks_arg = int(raw_breaks) if raw_breaks.isdigit() else raw_breaks
     add_molecule(smiles_arg, name_arg, breaks_arg)
