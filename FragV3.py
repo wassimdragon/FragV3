@@ -480,7 +480,6 @@ def update_manifest_and_launch_viewer(atoms_dict, bonds_list, formula_str, smile
     sys.stdout.flush()
 
 DEFAULT_SMILES = "C1=C(C(=O)NC(=O)N1)I"  # 5-Iodouracil (default fallback)
-DEFAULT_NAME   = "5-Iodouracil"
 
 # -------- Main Execution --------
 if __name__ == "__main__":  # Ensure multiprocessing works correctly
@@ -498,15 +497,10 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     smiles_to_use = smiles_input if smiles_input else DEFAULT_SMILES
 
     # Custom Name input
-    sys.stdout.write(f"  Custom Name (optional) [{DEFAULT_NAME}]: ")
+    sys.stdout.write("  Custom Name (optional): ")
     sys.stdout.flush()
     name_input = sys.stdin.readline().strip()
-    if name_input:
-        custom_name = name_input
-    elif smiles_to_use == DEFAULT_SMILES:
-        custom_name = DEFAULT_NAME
-    else:
-        custom_name = ""
+    custom_name = name_input if name_input else ""
 
     # Parse SMILES with RDKit
     _mol = Chem.MolFromSmiles(smiles_to_use)
