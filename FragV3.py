@@ -80,17 +80,69 @@ import glob
 
 # --- Helper Functions ---
 
+def parse_molecule_graphs(mol):
+    """
+    Given an RDKit Mol with explicit hydrogens (Chem.AddHs):
+    Extracts all atoms/bonds, heavy atoms/bonds, and an attached hydrogens mapping.
+    
+    Returns:
+        all_atoms: dict {idx: symbol} (1-based)
+        heavy_atoms: dict {idx: symbol} (1-based)
+        all_bonds: list of (idx1, idx2) (1-based)
+        heavy_bonds: list of (idx1, idx2) (1-based)
+        attached_h: dict {heavy_idx: [h_idx1, h_idx2, ...]}
+    """
+    all_atoms = {a.GetIdx() + 1: a.GetSymbol() for a in mol.GetAtoms()}
+    all_bonds = [(b.GetBeginAtomIdx() + 1, b.GetEndAtomIdx() + 1) for b in mol.GetBonds()]
+
+    heavy_atoms = {idx: sym for idx, sym in all_atoms.items() if sym != 'H'}
+    
+    attached_h = defaultdict(list)
+    heavy_bonds = []
+
+    for a1, a2 in all_bonds:
+        sym1 = all_atoms.get(a1)
+        sym2 = all_atoms.get(a2)
+        if sym1 == 'H' and sym2 != 'H':
+            attached_h[a2].append(a1)
+        elif sym2 == 'H' and sym1 != 'H':
+            attached_h[a1].append(a2)
+        elif sym1 != 'H' and sym2 != 'H':
+            heavy_bonds.append((a1, a2))
+
+    for k in attached_h:
+        attached_h[k].sort()
+
+    return all_atoms, heavy_atoms, all_bonds, heavy_bonds, dict(attached_h)
+
+
+def get_fragmentation_graph(all_atoms, heavy_atoms, all_bonds, heavy_bonds, attached_h):
+    """
+    Determines which graph to fragment on.
+    If heavy bonds exist, fragments on the heavy graph and re-attaches hydrogens.
+    Otherwise (e.g. methane, water, H2), falls back to fragmenting on all bonds.
+    """
+    if heavy_bonds:
+        return heavy_atoms, heavy_bonds, attached_h
+    else:
+        return all_atoms, all_bonds, {}
+
+
 # Global variables for worker processes
 GLOBAL_ATOMS = {}
 GLOBAL_BONDS = []
 GLOBAL_ATOM_INDICES = set()
+GLOBAL_ALL_ATOMS = {}
+GLOBAL_ATTACHED_H = {}
 
-def init_worker(atoms, bonds):
+def init_worker(atoms, bonds, all_atoms=None, attached_h=None):
     """Initializes global state for worker processes."""
-    global GLOBAL_ATOMS, GLOBAL_BONDS, GLOBAL_ATOM_INDICES
+    global GLOBAL_ATOMS, GLOBAL_BONDS, GLOBAL_ATOM_INDICES, GLOBAL_ALL_ATOMS, GLOBAL_ATTACHED_H
     GLOBAL_ATOMS = atoms
     GLOBAL_BONDS = bonds
     GLOBAL_ATOM_INDICES = set(atoms.keys())
+    GLOBAL_ALL_ATOMS = all_atoms if all_atoms is not None else atoms
+    GLOBAL_ATTACHED_H = attached_h if attached_h is not None else {}
 
 def calculate_molecular_weight(fragment_indices, atoms_dict):
     """Calculates the sum of atomic masses for atoms in a fragment."""
@@ -168,6 +220,7 @@ def process_bond_break(broken_bonds_tuple):
     atoms = GLOBAL_ATOMS
     all_bonds = GLOBAL_BONDS
     atom_indices = GLOBAL_ATOM_INDICES
+    attached_h = GLOBAL_ATTACHED_H
 
     valid_fragments = []
 
@@ -186,16 +239,27 @@ def process_bond_break(broken_bonds_tuple):
         ]
 
         if is_valid_fragment_valency(fragment_set, atoms, bonds_within_fragment):
-            valid_fragments.append(list(sorted(fragment_set)))
+            if attached_h:
+                full_fragment = list(fragment_set)
+                for heavy_idx in fragment_set:
+                    full_fragment.extend(attached_h.get(heavy_idx, []))
+                valid_fragments.append(list(sorted(full_fragment)))
+            else:
+                valid_fragments.append(list(sorted(fragment_set)))
 
     return valid_fragments
 
-def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, save_path):
+def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, save_path, all_atoms_dict=None, attached_h=None):
     """
     Generates unique valid fragments incrementally using multiprocessing and saves them.
     Splits into multiple files if size exceeds 80MB.
     Returns a list of generated file paths.
     """
+    if all_atoms_dict is None:
+        all_atoms_dict = atoms_dict
+    if attached_h is None:
+        attached_h = {}
+
     MAX_PART_SIZE = 80 * 1024 * 1024 # 80MB
     parts = []
     start_time = time.time()
@@ -220,7 +284,7 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
 
     if num_combinations == 0:
         print("No bond break combinations generated.")
-        return
+        return []
 
     print(f"Starting parallel processing with {cpu_count()} workers...")
     sys.stdout.flush()
@@ -236,11 +300,11 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
     
     try:
         # Initialize worker processes with the large read-only data
-        with Pool(processes=cpu_count(), initializer=init_worker, initargs=(atoms_dict, list(bonds_list))) as pool:
+        with Pool(processes=cpu_count(), initializer=init_worker, initargs=(atoms_dict, list(bonds_list), all_atoms_dict, attached_h)) as pool:
             chunksize = max(1, num_combinations // (cpu_count() * 4))
             chunksize = min(chunksize, 1000)
             
-            results_iterator = pool.imap_unordered(process_bond_break, bond_combinations_generator, chunksize=100)
+            results_iterator = pool.imap_unordered(process_bond_break, bond_combinations_generator, chunksize=chunksize)
 
             current_hash = generate_molecule_hash(atoms_dict, list(bonds_list), max_breaks)
             f = open(current_save_path, 'w')
@@ -295,8 +359,8 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
                                 f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
                                 first_fragment_in_part = True
 
-                            weight = calculate_molecular_weight(fragment_indices, atoms_dict)
-                            formula, _ = format_fragment(fragment_indices, atoms_dict)
+                            weight = calculate_molecular_weight(fragment_indices, all_atoms_dict)
+                            formula, _ = format_fragment(fragment_indices, all_atoms_dict)
                             fragment_data = [fragment_indices, weight, formula]
 
                             if not first_fragment_in_part:
@@ -510,16 +574,16 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     _mol = Chem.AddHs(_mol)  # add explicit Hs so all atoms are covered in fragmentation
 
     # Build atoms dict and bonds list from RDKit mol (1-based indexing)
-    atoms = {}
-    for _a in _mol.GetAtoms():
-        atoms[_a.GetIdx() + 1] = _a.GetSymbol()
-    bonds = [(_b.GetBeginAtomIdx() + 1, _b.GetEndAtomIdx() + 1) for _b in _mol.GetBonds()]
+    all_atoms, heavy_atoms, all_bonds, heavy_bonds, attached_h = parse_molecule_graphs(_mol)
+    atoms_to_break, bonds_to_break, attached_h_to_use = get_fragmentation_graph(
+        all_atoms, heavy_atoms, all_bonds, heavy_bonds, attached_h
+    )
 
-    formula_str, _ = format_fragment(list(atoms.keys()), atoms)
-    print(f"  Parsed molecule: {formula_str}  ({len(atoms)} atoms, {len(bonds)} bonds)")
+    formula_str, _ = format_fragment(list(all_atoms.keys()), all_atoms)
+    print(f"  Parsed molecule: {formula_str}  ({len(all_atoms)} atoms [{len(heavy_atoms)} heavy], {len(bonds_to_break)} breakable bonds [{len(all_bonds)} total])")
 
     # Max Breaks
-    optimal_breaks = calculate_optimal_max_breaks(len(bonds))
+    optimal_breaks = calculate_optimal_max_breaks(len(bonds_to_break))
     sys.stdout.write(f"  Max Bond Breaks ['max', 'auto', 1, 2, ...] [optimal={optimal_breaks}]: ")
     sys.stdout.flush()
     breaks_input = sys.stdin.readline().strip()
@@ -544,10 +608,10 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     print("=" * 50)
 
     # --- Validate ---
-    if not isinstance(atoms, dict) or not atoms:
+    if not isinstance(all_atoms, dict) or not all_atoms:
         print("Error: 'atoms' must be a non-empty dictionary.")
         sys.exit(1)
-    if not isinstance(bonds, list):
+    if not isinstance(bonds_to_break, list):
         print("Warning: 'bonds' is not a list (or is empty).")
     if not ATOMIC_MASSES:
         print("Error: ATOMIC_MASSES dictionary is empty.")
@@ -561,26 +625,26 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
 
     # Determine max_breaks early so it's included in the cache hash
     if FORCED_MAX_BOND_BREAKS == "max":
-        dynamic_max_breaks = len(bonds)  # Fully unconstrained: try every possible bond break count
-        print(f"Max bond breaks set to 'max' -> using ALL {dynamic_max_breaks} bonds (THIS IS THE MAXIMUM).")
+        dynamic_max_breaks = len(bonds_to_break)  # Fully unconstrained: try every possible breakable bond
+        print(f"Max bond breaks set to 'max' -> using ALL {dynamic_max_breaks} breakable bonds (THIS IS THE MAXIMUM).")
         if dynamic_max_breaks > 15:
             print(f"  WARNING: {dynamic_max_breaks} bonds is very large. Computation may take a very long time.")
     elif FORCED_MAX_BOND_BREAKS == "auto" or FORCED_MAX_BOND_BREAKS is None:
-        dynamic_max_breaks = calculate_optimal_max_breaks(len(bonds))
-        if dynamic_max_breaks < len(bonds):
-            print(f"Max bond breaks set to AUTO OPTIMAL ({dynamic_max_breaks} of {len(bonds)} bonds) [THIS IS NOT THE MAX, optimized to finish in < 2 min]. Type 'max' if you want all {len(bonds)} breaks.")
+        dynamic_max_breaks = calculate_optimal_max_breaks(len(bonds_to_break))
+        if dynamic_max_breaks < len(bonds_to_break):
+            print(f"Max bond breaks set to AUTO OPTIMAL ({dynamic_max_breaks} of {len(bonds_to_break)} bonds) [THIS IS NOT THE MAX, optimized to finish in < 2 min]. Type 'max' if you want all {len(bonds_to_break)} breaks.")
         else:
-            print(f"Max bond breaks set to AUTO ({dynamic_max_breaks} of {len(bonds)} bonds) [THIS IS THE MAXIMUM].")
+            print(f"Max bond breaks set to AUTO ({dynamic_max_breaks} of {len(bonds_to_break)} bonds) [THIS IS THE MAXIMUM].")
     elif isinstance(FORCED_MAX_BOND_BREAKS, int):
         dynamic_max_breaks = FORCED_MAX_BOND_BREAKS
-        if dynamic_max_breaks < len(bonds):
-            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds)} bonds [THIS IS NOT THE MAX].")
+        if dynamic_max_breaks < len(bonds_to_break):
+            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds_to_break)} bonds [THIS IS NOT THE MAX].")
         else:
-            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds)} bonds [THIS IS THE MAXIMUM].")
+            print(f"Max bond breaks set to {dynamic_max_breaks} of {len(bonds_to_break)} bonds [THIS IS THE MAXIMUM].")
     else:
-        dynamic_max_breaks = get_max_valency_from_molecule(atoms, ATOM_VALENCIES, bonds)
+        dynamic_max_breaks = get_max_valency_from_molecule(atoms_to_break, ATOM_VALENCIES, bonds_to_break)
 
-    current_mol_hash = generate_molecule_hash(atoms, bonds, dynamic_max_breaks)
+    current_mol_hash = generate_molecule_hash(atoms_to_break, bonds_to_break, dynamic_max_breaks)
     fragment_file = get_fragment_cache_path(formula_str, smiles_to_use, dynamic_max_breaks)
 
     # --- Load or Generate Fragments ---
@@ -621,10 +685,17 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
             try: os.remove(p)
             except: pass
 
-        generated_parts = generate_unique_fragments_incrementally(atoms, bonds, max_breaks=dynamic_max_breaks, save_path=fragment_file)
+        generated_parts = generate_unique_fragments_incrementally(
+            atoms_to_break,
+            bonds_to_break,
+            max_breaks=dynamic_max_breaks,
+            save_path=fragment_file,
+            all_atoms_dict=all_atoms,
+            attached_h=attached_h_to_use
+        )
         fragment_files = [os.path.relpath(p, CACHE_DIR) for p in generated_parts]
 
     # --- Update UI Registry ---
-    update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles_to_use, dynamic_max_breaks, fragment_files, custom_name)
+    update_manifest_and_launch_viewer(all_atoms, bonds_to_break, formula_str, smiles_to_use, dynamic_max_breaks, fragment_files, custom_name)
 
     print(f"Total execution time: {time.time() - start_total:.2f}s")

@@ -17,29 +17,32 @@ def add_molecule(smiles, custom_name, max_breaks=None):
         raise ValueError(f"Could not parse SMILES: {smiles}")
         
     mol = Chem.AddHs(mol)
-    atoms = {a.GetIdx() + 1: a.GetSymbol() for a in mol.GetAtoms()}
-    bonds = [(b.GetBeginAtomIdx() + 1, b.GetEndAtomIdx() + 1) for b in mol.GetBonds()]
-    formula_str, _ = FragV3.format_fragment(list(atoms.keys()), atoms)
+    all_atoms, heavy_atoms, all_bonds, heavy_bonds, attached_h = FragV3.parse_molecule_graphs(mol)
+    atoms_to_break, bonds_to_break, attached_h_to_use = FragV3.get_fragmentation_graph(
+        all_atoms, heavy_atoms, all_bonds, heavy_bonds, attached_h
+    )
+
+    formula_str, _ = FragV3.format_fragment(list(all_atoms.keys()), all_atoms)
 
     if max_breaks is None or max_breaks in ("auto", "opt", "optimal"):
-        max_breaks = FragV3.calculate_optimal_max_breaks(len(bonds))
+        max_breaks = FragV3.calculate_optimal_max_breaks(len(bonds_to_break))
     elif max_breaks == "max":
-        max_breaks = len(bonds)
+        max_breaks = len(bonds_to_break)
     elif isinstance(max_breaks, str) and max_breaks.isdigit():
         max_breaks = int(max_breaks)
 
-    is_max = (max_breaks >= len(bonds))
+    is_max = (max_breaks >= len(bonds_to_break))
     status_label = "[THIS IS THE MAXIMUM]" if is_max else f"[THIS IS NOT THE MAX, optimal cap for < 2 min run]"
     print(f"Processing '{custom_name}' ({formula_str})...")
-    print(f"  Atoms: {len(atoms)}, Bonds: {len(bonds)}, Max Breaks: {max_breaks} {status_label}")
+    print(f"  Total Atoms: {len(all_atoms)} ({len(heavy_atoms)} heavy), Breakable Bonds: {len(bonds_to_break)} (of {len(all_bonds)} total), Max Breaks: {max_breaks} {status_label}")
 
     fragment_file = FragV3.get_fragment_cache_path(formula_str, smiles, max_breaks)
     os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
-    current_mol_hash = FragV3.generate_molecule_hash(atoms, bonds, max_breaks)
+    current_mol_hash = FragV3.generate_molecule_hash(atoms_to_break, bonds_to_break, max_breaks)
 
     # Single-process fragment generation for speed & stability across OS environments
-    FragV3.init_worker(atoms, bonds)
-    bond_combinations_generator = FragV3.generate_bond_breaks(bonds, max_breaks)
+    FragV3.init_worker(atoms_to_break, bonds_to_break, all_atoms, attached_h_to_use)
+    bond_combinations_generator = FragV3.generate_bond_breaks(bonds_to_break, max_breaks)
 
     seen_indices = set()
     unique_count = 0
@@ -75,8 +78,8 @@ def add_molecule(smiles, custom_name, max_breaks=None):
                         f.write('{\n  "metadata": {"molecule_hash": "' + current_mol_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
                         first_fragment_in_part = True
 
-                    weight = FragV3.calculate_molecular_weight(fragment_indices, atoms)
-                    formula, _ = FragV3.format_fragment(fragment_indices, atoms)
+                    weight = FragV3.calculate_molecular_weight(fragment_indices, all_atoms)
+                    formula, _ = FragV3.format_fragment(fragment_indices, all_atoms)
                     fragment_data = [fragment_indices, weight, formula]
 
                     if not first_fragment_in_part:
@@ -91,7 +94,7 @@ def add_molecule(smiles, custom_name, max_breaks=None):
     fragment_files = [os.path.relpath(p, FragV3.CACHE_DIR) for p in parts]
 
     # Update central manifest.json
-    FragV3.update_manifest_and_launch_viewer(atoms, bonds, formula_str, smiles, max_breaks, fragment_files, custom_name)
+    FragV3.update_manifest_and_launch_viewer(all_atoms, bonds_to_break, formula_str, smiles, max_breaks, fragment_files, custom_name)
     print("FINISHED_SUCCESSFULLY")
 
 if __name__ == '__main__':
