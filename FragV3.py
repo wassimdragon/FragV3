@@ -35,10 +35,11 @@ ATOM_VALENCIES = {
 FORCED_MAX_BOND_BREAKS = "auto"  # Defaults to optimal calculation (< 2 min runtime)
 CACHE_DIR = "docs/fragment_data" # Folder for all previous results
 
-def calculate_optimal_max_breaks(num_bonds, target_max_combos=1_500_000, absolute_cap=12):
+def calculate_optimal_max_breaks(num_bonds, target_max_combos=1_500_000):
     """
     Calculates the optimal maximum bond breaks for a molecule with `num_bonds`
     to ensure computation finishes in under 2 minutes (typically < 30s).
+    For any molecule with <= 20 breakable bonds, this returns all bonds (MAXIMUM).
     """
     if num_bonds <= 0:
         return 1
@@ -55,8 +56,6 @@ def calculate_optimal_max_breaks(num_bonds, target_max_combos=1_500_000, absolut
             break
         total_combos += combos_at_k
         best_breaks = k
-        if k >= absolute_cap:
-            break
 
     return best_breaks
 
@@ -643,11 +642,26 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     )
 
     formula_str, _ = format_fragment(list(all_atoms.keys()), all_atoms)
-    print(f"  Parsed molecule: {formula_str}  ({len(all_atoms)} atoms [{len(heavy_atoms)} heavy], {len(bonds_to_break)} breakable bonds [{len(all_bonds)} total])")
+    
+    num_total_atoms = len(all_atoms)
+    num_heavy_atoms = len(heavy_atoms)
+    num_h_atoms = num_total_atoms - num_heavy_atoms
+    num_total_bonds = len(all_bonds)
+    num_bonds_without_h = len(heavy_bonds)
+    num_bonds_to_break = len(bonds_to_break)
+
+    print(f"  Parsed molecule: {formula_str}")
+    print(f"  • Number of atoms: {num_total_atoms} ({num_heavy_atoms} heavy atoms, {num_h_atoms} hydrogens)")
+    print(f"  • Number of bonds: {num_total_bonds}")
+    print(f"  • Number of bonds without hydrogens: {num_bonds_without_h}")
+    print(f"  • Breakable bonds considered: {num_bonds_to_break} (only non-hydrogen skeletal bonds)")
 
     # Max Breaks
-    optimal_breaks = calculate_optimal_max_breaks(len(bonds_to_break))
-    sys.stdout.write(f"  Max Bond Breaks ['max', 'auto', 1, 2, ...] [optimal={optimal_breaks}]: ")
+    optimal_breaks = calculate_optimal_max_breaks(num_bonds_to_break)
+    is_max = (optimal_breaks >= num_bonds_to_break)
+    opt_label = f"{optimal_breaks} (MAXIMUM - all {num_bonds_to_break} bonds in < 2 min)" if is_max else f"{optimal_breaks} (optimal cap to finish in < 2 min)"
+
+    sys.stdout.write(f"  Max Bond Breaks ['max', 'auto', 1, 2, ...] [default={opt_label}]: ")
     sys.stdout.flush()
     breaks_input = sys.stdin.readline().strip()
     if breaks_input:
@@ -664,10 +678,11 @@ if __name__ == "__main__":  # Ensure multiprocessing works correctly
     else:
         FORCED_MAX_BOND_BREAKS = "auto"
 
+    effective_choice = num_bonds_to_break if FORCED_MAX_BOND_BREAKS == "max" else (optimal_breaks if FORCED_MAX_BOND_BREAKS == "auto" else FORCED_MAX_BOND_BREAKS)
     print("=" * 50)
     print(f"  Running: {formula_str}")
     print(f"  Mode: Generate all possible fragments (filter in browser)")
-    print(f"  Max Breaks Choice: {FORCED_MAX_BOND_BREAKS}")
+    print(f"  Max Breaks Choice: {FORCED_MAX_BOND_BREAKS} (effective breaks: {effective_choice})")
     print("=" * 50)
 
     # --- Validate ---

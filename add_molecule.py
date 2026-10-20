@@ -31,10 +31,21 @@ def add_molecule(smiles, custom_name, max_breaks=None):
     elif isinstance(max_breaks, str) and max_breaks.isdigit():
         max_breaks = int(max_breaks)
 
-    is_max = (max_breaks >= len(bonds_to_break))
+    num_total_atoms = len(all_atoms)
+    num_heavy_atoms = len(heavy_atoms)
+    num_h_atoms = num_total_atoms - num_heavy_atoms
+    num_total_bonds = len(all_bonds)
+    num_bonds_without_h = len(heavy_bonds)
+    num_bonds_to_break = len(bonds_to_break)
+
+    is_max = (max_breaks >= num_bonds_to_break)
     status_label = "[THIS IS THE MAXIMUM]" if is_max else f"[THIS IS NOT THE MAX, optimal cap for < 2 min run]"
     print(f"Processing '{custom_name}' ({formula_str})...")
-    print(f"  Total Atoms: {len(all_atoms)} ({len(heavy_atoms)} heavy), Breakable Bonds: {len(bonds_to_break)} (of {len(all_bonds)} total), Max Breaks: {max_breaks} {status_label}")
+    print(f"  • Number of atoms: {num_total_atoms} ({num_heavy_atoms} heavy atoms, {num_h_atoms} hydrogens)")
+    print(f"  • Number of bonds: {num_total_bonds}")
+    print(f"  • Number of bonds without hydrogens: {num_bonds_without_h}")
+    print(f"  • Breakable bonds considered: {num_bonds_to_break} (only non-hydrogen skeletal bonds)")
+    print(f"  • Max Breaks: {max_breaks} {status_label}")
 
     fragment_file = FragV3.get_fragment_cache_path(formula_str, smiles, max_breaks)
     os.makedirs(os.path.dirname(fragment_file), exist_ok=True)
