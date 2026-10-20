@@ -215,12 +215,10 @@ def connected_components(atom_indices, bonds_list):
     return list(components.values())
 
 def process_bond_break(broken_bonds_tuple):
-    """Worker function: finds and validates fragments for a set of broken bonds."""
-    # Access global state
+    """Worker function: finds and validates pure skeletal fragments for a set of broken bonds."""
     atoms = GLOBAL_ATOMS
     all_bonds = GLOBAL_BONDS
     atom_indices = GLOBAL_ATOM_INDICES
-    attached_h = GLOBAL_ATTACHED_H
 
     valid_fragments = []
 
@@ -239,15 +237,63 @@ def process_bond_break(broken_bonds_tuple):
         ]
 
         if is_valid_fragment_valency(fragment_set, atoms, bonds_within_fragment):
-            if attached_h:
-                full_fragment = list(fragment_set)
-                for heavy_idx in fragment_set:
-                    full_fragment.extend(attached_h.get(heavy_idx, []))
-                valid_fragments.append(list(sorted(full_fragment)))
-            else:
-                valid_fragments.append(list(sorted(fragment_set)))
+            valid_fragments.append(list(sorted(fragment_set)))
 
     return valid_fragments
+
+def get_lone_hydrogen_fragments(attached_h, all_atoms=None):
+    """Returns each lone hydrogen atom as a 1-atom fragment."""
+    h_atoms = set()
+    if attached_h:
+        for h_list in attached_h.values():
+            for h in h_list:
+                h_atoms.add(h)
+    if all_atoms:
+        for idx, sym in all_atoms.items():
+            if sym == 'H':
+                h_atoms.add(idx)
+    return [[h] for h in sorted(h_atoms)]
+
+def expand_fragment_hydrogens(skeletal_fragment, attached_h):
+    """
+    Expands a pure heavy-atom skeletal fragment into its hydrogen-decorated variants:
+    1. Bare skeletal fragment (0 H)
+    2. +1 H (skeletal fragment + each 1 attached hydrogen)
+    3. For single heavy atoms, all hydrogen subsets (e.g., CH2, CH3, NH2)
+    4. For multi-atom fragments, full hydrogen decoration (all attached H) and -1 H variants
+    """
+    variants = [list(skeletal_fragment)]  # Bare skeletal fragment (0 H)
+
+    if not attached_h:
+        return variants
+
+    frag_h = []
+    for a in skeletal_fragment:
+        frag_h.extend(attached_h.get(a, []))
+
+    if not frag_h:
+        return variants
+
+    # +1 H variants (add each attached hydrogen individually)
+    for h in frag_h:
+        variants.append(sorted(list(skeletal_fragment) + [h]))
+
+    if len(skeletal_fragment) == 1:
+        # Single heavy atom: include all combinations of attached hydrogens (e.g. CH2, CH3)
+        for k in range(2, len(frag_h) + 1):
+            for h_comb in combinations(frag_h, k):
+                variants.append(sorted(list(skeletal_fragment) + list(h_comb)))
+    else:
+        # Multi-atom fragment: full attached hydrogens
+        variants.append(sorted(list(skeletal_fragment) + frag_h))
+        # Loss of 1 H from full decoration
+        if len(frag_h) > 2:
+            for h in frag_h:
+                rem = [x for x in frag_h if x != h]
+                variants.append(sorted(list(skeletal_fragment) + rem))
+
+    return variants
+
 
 def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, save_path, all_atoms_dict=None, attached_h=None):
     """
@@ -311,6 +357,22 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
             f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
             first_fragment_in_part = True
 
+            # Emit lone hydrogens first
+            lone_h_frags = get_lone_hydrogen_fragments(attached_h, all_atoms_dict)
+            for h_frag in lone_h_frags:
+                indices_tuple = tuple(h_frag)
+                if indices_tuple not in seen_indices:
+                    seen_indices.add(indices_tuple)
+                    unique_count += 1
+                    generated_count += 1
+                    weight = calculate_molecular_weight(h_frag, all_atoms_dict)
+                    formula, _ = format_fragment(h_frag, all_atoms_dict)
+                    fragment_data = [h_frag, weight, formula]
+                    if not first_fragment_in_part:
+                        f.write(',')
+                    json.dump(fragment_data, f, separators=(',', ':'))
+                    first_fragment_in_part = False
+
             for sublist in results_iterator:
                 processed_combinations += 1
                 
@@ -338,35 +400,36 @@ def generate_unique_fragments_incrementally(atoms_dict, bonds_list, max_breaks, 
                     print(f"\r  Progress: |{bar}| {percent:6.2f}% ({processed_combinations}/{num_combinations}) ETA: {eta_str}    ", end="", flush=True)
 
                 if sublist:
-                    for fragment_indices in sublist:
-                        generated_count += 1
-                        indices_tuple = tuple(fragment_indices)
+                    for skeletal_frag in sublist:
+                        for fragment_indices in expand_fragment_hydrogens(skeletal_frag, attached_h):
+                            generated_count += 1
+                            indices_tuple = tuple(fragment_indices)
 
-                        if indices_tuple not in seen_indices:
-                            seen_indices.add(indices_tuple)
-                            unique_count += 1
+                            if indices_tuple not in seen_indices:
+                                seen_indices.add(indices_tuple)
+                                unique_count += 1
 
-                            # Check if we need to rotate to a new part
-                            if f.tell() > MAX_PART_SIZE:
-                                f.write('\n  ]\n}')
-                                f.close()
-                                
-                                current_part += 1
-                                current_save_path = save_path.replace(".json", f"_part{current_part}.json")
-                                parts.append(current_save_path)
-                                
-                                f = open(current_save_path, 'w')
-                                f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
-                                first_fragment_in_part = True
+                                # Check if we need to rotate to a new part
+                                if f.tell() > MAX_PART_SIZE:
+                                    f.write('\n  ]\n}')
+                                    f.close()
+                                    
+                                    current_part += 1
+                                    current_save_path = save_path.replace(".json", f"_part{current_part}.json")
+                                    parts.append(current_save_path)
+                                    
+                                    f = open(current_save_path, 'w')
+                                    f.write('{\n  "metadata": {"molecule_hash": "' + current_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
+                                    first_fragment_in_part = True
 
-                            weight = calculate_molecular_weight(fragment_indices, all_atoms_dict)
-                            formula, _ = format_fragment(fragment_indices, all_atoms_dict)
-                            fragment_data = [fragment_indices, weight, formula]
+                                weight = calculate_molecular_weight(fragment_indices, all_atoms_dict)
+                                formula, _ = format_fragment(fragment_indices, all_atoms_dict)
+                                fragment_data = [fragment_indices, weight, formula]
 
-                            if not first_fragment_in_part:
-                                f.write(',')
-                            json.dump(fragment_data, f, separators=(',', ':'))
-                            first_fragment_in_part = False
+                                if not first_fragment_in_part:
+                                    f.write(',')
+                                json.dump(fragment_data, f, separators=(',', ':'))
+                                first_fragment_in_part = False
 
             f.write('\n  ]\n}')
             f.close()
@@ -425,7 +488,7 @@ def generate_molecule_hash(atoms_dict, bonds_list, max_breaks):
     """Generates a stable hash string for a specific molecule + bond break setting."""
     atoms_str = json.dumps({str(k): v for k, v in sorted(atoms_dict.items())})
     bonds_str = json.dumps(sorted([sorted(b) for b in bonds_list]))
-    combined = atoms_str + "|" + bonds_str + "|breaks=" + str(max_breaks)
+    combined = atoms_str + "|" + bonds_str + "|breaks=" + str(max_breaks) + "|alg=v4_h_expansion"
     return hashlib.md5(combined.encode('utf-8')).hexdigest()
 
 def get_fragment_cache_path(formula, smiles, max_breaks):

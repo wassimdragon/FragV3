@@ -58,34 +58,51 @@ def add_molecule(smiles, custom_name, max_breaks=None):
     f.write('{\n  "metadata": {"molecule_hash": "' + current_mol_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
     first_fragment_in_part = True
 
+    # Emit lone hydrogens first
+    lone_h_frags = FragV3.get_lone_hydrogen_fragments(attached_h_to_use, all_atoms)
+    for h_frag in lone_h_frags:
+        indices_tuple = tuple(h_frag)
+        if indices_tuple not in seen_indices:
+            seen_indices.add(indices_tuple)
+            unique_count += 1
+            generated_count += 1
+            weight = FragV3.calculate_molecular_weight(h_frag, all_atoms)
+            formula, _ = FragV3.format_fragment(h_frag, all_atoms)
+            fragment_data = [h_frag, weight, formula]
+            if not first_fragment_in_part:
+                f.write(',')
+            json.dump(fragment_data, f, separators=(',', ':'))
+            first_fragment_in_part = False
+
     for broken_bonds_tuple in bond_combinations_generator:
         sublist = FragV3.process_bond_break(broken_bonds_tuple)
         if sublist:
-            for fragment_indices in sublist:
-                generated_count += 1
-                indices_tuple = tuple(fragment_indices)
-                if indices_tuple not in seen_indices:
-                    seen_indices.add(indices_tuple)
-                    unique_count += 1
+            for skeletal_frag in sublist:
+                for fragment_indices in FragV3.expand_fragment_hydrogens(skeletal_frag, attached_h_to_use):
+                    generated_count += 1
+                    indices_tuple = tuple(fragment_indices)
+                    if indices_tuple not in seen_indices:
+                        seen_indices.add(indices_tuple)
+                        unique_count += 1
 
-                    if f.tell() > MAX_PART_SIZE:
-                        f.write('\n  ]\n}')
-                        f.close()
-                        current_part += 1
-                        current_save_path = fragment_file.replace(".json", f"_part{current_part}.json")
-                        parts.append(current_save_path)
-                        f = open(current_save_path, 'w')
-                        f.write('{\n  "metadata": {"molecule_hash": "' + current_mol_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
-                        first_fragment_in_part = True
+                        if f.tell() > MAX_PART_SIZE:
+                            f.write('\n  ]\n}')
+                            f.close()
+                            current_part += 1
+                            current_save_path = fragment_file.replace(".json", f"_part{current_part}.json")
+                            parts.append(current_save_path)
+                            f = open(current_save_path, 'w')
+                            f.write('{\n  "metadata": {"molecule_hash": "' + current_mol_hash + '", "part": ' + str(current_part) + '},\n  "fragments": [\n')
+                            first_fragment_in_part = True
 
-                    weight = FragV3.calculate_molecular_weight(fragment_indices, all_atoms)
-                    formula, _ = FragV3.format_fragment(fragment_indices, all_atoms)
-                    fragment_data = [fragment_indices, weight, formula]
+                        weight = FragV3.calculate_molecular_weight(fragment_indices, all_atoms)
+                        formula, _ = FragV3.format_fragment(fragment_indices, all_atoms)
+                        fragment_data = [fragment_indices, weight, formula]
 
-                    if not first_fragment_in_part:
-                        f.write(',')
-                    json.dump(fragment_data, f, separators=(',', ':'))
-                    first_fragment_in_part = False
+                        if not first_fragment_in_part:
+                            f.write(',')
+                        json.dump(fragment_data, f, separators=(',', ':'))
+                        first_fragment_in_part = False
 
     f.write('\n  ]\n}')
     f.close()
